@@ -1,37 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
-
-const MESES = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
-
-// Caderno em branco, ancorado no mês em que a conta foi criada.
-const novoCaderno = () => {
-  const hoje = new Date();
-  return {
-    mesBase: hoje.getMonth(), // 0 = janeiro
-    anoBase: hoje.getFullYear(),
-    itens: [],
-  };
-};
-
-const brl = (n) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-// Quantas parcelas ainda faltam depois do mês base
-const faltam = (it) => (it.tipo === "fixo" ? Infinity : it.total - it.paga);
-
-// O item aparece no mês `offset` (0 = mês base)?
-const ativoEm = (it, offset) => {
-  if (it.tipo === "fixo") return true;
-  if (offset === 0) return true;
-  return faltam(it) >= offset;
-};
-
-const rotuloMes = (base, ano, offset) => {
-  const i = (base + offset) % 12;
-  const a = ano + Math.floor((base + offset) / 12);
-  return { nome: MESES[i], ano: a };
-};
+import { MESES, novoCaderno, ativoEm, faltam, rotuloMes } from "./lib/caderno";
+import AbaMes from "./components/AbaMes.jsx";
+import AbaProjecao from "./components/AbaProjecao.jsx";
+import ModalFecharMes from "./components/ModalFecharMes.jsx";
+import FormConta from "./components/FormConta.jsx";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -339,109 +313,31 @@ function CadernoContas({ session }) {
         </div>
 
         {aba === "mes" && (
-          <>
-            {dadosAnterior && offset === 0 && (
-              <div className="mb-4 border-l-2 border-stone-400 bg-stone-200 px-3 py-2 text-sm flex justify-between items-center gap-3">
-                <span className="text-stone-600">Mês fechado recentemente.</span>
-                <button onClick={desfazerFechamento}
-                  className="underline text-stone-800 shrink-0 focus:outline-none focus:ring-2 focus:ring-stone-800">
-                  desfazer
-                </button>
-              </div>
-            )}
-
-            <div className="border border-stone-900 p-4 mb-6">
-              <div className="flex justify-between items-end">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-stone-500">total do mês</span>
-                <span className="text-3xl tabular-nums" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-                  {brl(total(offset))}
-                </span>
-              </div>
-              <div className="mt-3 pt-3 border-t border-stone-300 flex justify-between text-sm tabular-nums text-stone-600">
-                <span>fixos {brl(somaFixos(offset))}</span>
-                <span>parcelado {brl(somaParcelas(offset))}</span>
-              </div>
-            </div>
-
-            {itens.length === 0 ? (
-              <div className="border border-stone-300 border-dashed p-6 text-center">
-                <p className="text-sm text-stone-600 mb-1">Caderno em branco.</p>
-                <p className="text-xs text-stone-500">
-                  Toque em <span className="text-stone-800">lançar conta</span> para
-                  começar. Contas de todo mês entram como fixas; compras no cartão,
-                  como parceladas.
-                </p>
-              </div>
-            ) : (
-              <>
-                <Secao titulo="fixos"
-                  itens={doMes(offset).filter((i) => i.tipo === "fixo")}
-                  onEditar={setForm} onRemover={remover} offset={offset} />
-
-                <Secao titulo="parcelado"
-                  itens={doMes(offset).filter((i) => i.tipo === "parcelado")}
-                  onEditar={setForm} onRemover={remover} offset={offset} />
-              </>
-            )}
-          </>
+          <AbaMes
+            dadosAnterior={dadosAnterior}
+            offset={offset}
+            onDesfazer={desfazerFechamento}
+            totalMes={total(offset)}
+            somaFixosMes={somaFixos(offset)}
+            somaParcelasMes={somaParcelas(offset)}
+            itensDoMes={doMes(offset)}
+            onEditar={setForm}
+            onRemover={remover}
+          />
         )}
 
         {aba === "projecao" && (
-          <div className="space-y-3">
-            {meses.map((o) => {
-              const r = rotuloMes(mesBase, anoBase, o);
-              const t = total(o);
-              const encerram = itens.filter(
-                (i) => i.tipo === "parcelado" && ativoEm(i, o) && !ativoEm(i, o + 1)
-              );
-              return (
-                <div key={o} className="border-b border-stone-300 pb-3">
-                  <div className="flex justify-between items-baseline">
-                    <span className="lowercase text-sm">
-                      {r.nome} <span className="text-stone-400">{r.ano}</span>
-                    </span>
-                    <span className="tabular-nums" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-                      {brl(t)}
-                    </span>
-                  </div>
-                  <div className="h-1.5 bg-stone-200 mt-2">
-                    <div className="h-full bg-stone-900" style={{ width: `${(t / maxTotal) * 100}%` }} />
-                  </div>
-                  {encerram.length > 0 && (
-                    <p className="text-xs text-stone-500 mt-2">
-                      última parcela: {encerram.map((e) => e.nome).join(", ")}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-            <p className="text-xs text-stone-500 pt-2">
-              A projeção usa só o que está lançado. Compras novas entram por cima.
-            </p>
-
-            <div className="pt-4 border-t border-stone-300">
-              <h3 className="text-[10px] uppercase tracking-[0.3em] text-stone-500 mb-2">backup</h3>
-              <div className="flex gap-3">
-                <button onClick={exportar}
-                  className="flex-1 border border-stone-400 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
-                  baixar JSON
-                </button>
-                <button onClick={exportarCsv}
-                  className="flex-1 border border-stone-400 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
-                  baixar CSV
-                </button>
-              </div>
-              <label className="block mt-3 border border-stone-400 py-2 text-sm text-center cursor-pointer focus-within:ring-2 focus-within:ring-stone-800">
-                restaurar
-                <input type="file" accept="application/json" className="hidden" onChange={importar} />
-              </label>
-              <p className="text-xs text-stone-500 mt-2">
-                Os dados já ficam salvos no servidor. O JSON serve para
-                restaurar aqui mesmo; o CSV é só para abrir em planilha —
-                restaurar só aceita o formato JSON.
-              </p>
-            </div>
-          </div>
+          <AbaProjecao
+            meses={meses}
+            mesBase={mesBase}
+            anoBase={anoBase}
+            total={total}
+            maxTotal={maxTotal}
+            itens={itens}
+            onExportar={exportar}
+            onExportarCsv={exportarCsv}
+            onImportar={importar}
+          />
         )}
       </div>
 
@@ -460,119 +356,22 @@ function CadernoContas({ session }) {
       </div>
 
       {confirmarFechar && (
-        <div className="fixed inset-0 bg-stone-900 bg-opacity-40 flex items-end sm:items-center justify-center z-10">
-          <div className="bg-stone-100 w-full max-w-lg p-5">
-            <h2 className="text-xl lowercase mb-3" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-              fechar {m.nome}?
-            </h2>
-            <p className="text-sm text-stone-600 mb-5">
-              Cada parcela avança uma casa e o mês vira {rotuloMes(mesBase, anoBase, 1).nome}.
-              Não dá pra desfazer.
-            </p>
-            <div className="flex gap-3">
-              <button onClick={virarMes}
-                className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
-                fechar mês
-              </button>
-              <button onClick={() => setConfirmarFechar(false)}
-                className="px-5 border border-stone-400 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
-                cancelar
-              </button>
-            </div>
-          </div>
-        </div>
+        <ModalFecharMes
+          mesAtual={m.nome}
+          proximoMes={rotuloMes(mesBase, anoBase, 1).nome}
+          onConfirmar={virarMes}
+          onCancelar={() => setConfirmarFechar(false)}
+        />
       )}
 
       {form && (
-        <div className="fixed inset-0 bg-stone-900 bg-opacity-40 flex items-end sm:items-center justify-center z-10">
-          <div className="bg-stone-100 w-full max-w-lg p-5 max-h-full overflow-y-auto">
-            <h2 className="text-xl lowercase mb-4" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-              {form.id ? "editar conta" : "nova conta"}
-            </h2>
-
-            <label className="block text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-1">nome</label>
-            <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })}
-              className="w-full border border-stone-400 bg-transparent px-3 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-stone-800" />
-
-            <label className="block text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-1">valor da parcela</label>
-            <input value={form.valor} inputMode="decimal" placeholder="0,00"
-              onChange={(e) => setForm({ ...form, valor: e.target.value })}
-              className="w-full border border-stone-400 bg-transparent px-3 py-2 mb-4 tabular-nums focus:outline-none focus:ring-2 focus:ring-stone-800" />
-
-            <div className="flex gap-2 mb-4">
-              {[["fixo", "todo mês"], ["parcelado", "parcelado"]].map(([k, r]) => (
-                <button key={k} onClick={() => setForm({ ...form, tipo: k })}
-                  className={`flex-1 py-2 text-sm border focus:outline-none focus:ring-2 focus:ring-stone-800 ${
-                    form.tipo === k ? "bg-stone-900 text-stone-50 border-stone-900" : "border-stone-400"}`}>
-                  {r}
-                </button>
-              ))}
-            </div>
-
-            {form.tipo === "parcelado" && (
-              <div className="flex gap-3 mb-4">
-                <div className="flex-1">
-                  <label className="block text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-1">já paguei</label>
-                  <input value={form.paga} inputMode="numeric"
-                    onChange={(e) => setForm({ ...form, paga: e.target.value })}
-                    className="w-full border border-stone-400 bg-transparent px-3 py-2 tabular-nums focus:outline-none focus:ring-2 focus:ring-stone-800" />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-1">de quantas</label>
-                  <input value={form.total} inputMode="numeric"
-                    onChange={(e) => setForm({ ...form, total: e.target.value })}
-                    className="w-full border border-stone-400 bg-transparent px-3 py-2 tabular-nums focus:outline-none focus:ring-2 focus:ring-stone-800" />
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-3 mt-5">
-              <button onClick={gravarForm}
-                className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
-                gravar
-              </button>
-              <button onClick={() => setForm(null)}
-                className="px-5 border border-stone-400 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
-                cancelar
-              </button>
-            </div>
-          </div>
-        </div>
+        <FormConta
+          form={form}
+          setForm={setForm}
+          onGravar={gravarForm}
+          onCancelar={() => setForm(null)}
+        />
       )}
     </div>
-  );
-}
-
-function Secao({ titulo, itens, onEditar, onRemover, offset }) {
-  if (itens.length === 0) return null;
-  return (
-    <section className="mb-7">
-      <h2 className="text-[10px] uppercase tracking-[0.3em] text-stone-500 mb-2">{titulo}</h2>
-      <div className="border-t border-stone-300">
-        {itens.map((it) => {
-          const parcelaAtual = it.tipo === "parcelado" ? it.paga + offset : null;
-          const resta = it.tipo === "parcelado" ? it.total - parcelaAtual : null;
-          return (
-            <div key={it.id} className="border-b border-stone-300 py-3 flex items-center gap-3">
-              <button onClick={() => onEditar({ ...it })}
-                className="flex-1 text-left focus:outline-none focus:ring-2 focus:ring-stone-800">
-                <div className="text-sm">{it.nome}</div>
-                {it.tipo === "parcelado" && (
-                  <div className="text-xs text-stone-500 tabular-nums mt-0.5">
-                    {String(parcelaAtual).padStart(2, "0")}/{String(it.total).padStart(2, "0")}
-                    {resta === 0 ? " · última" : ` · faltam ${resta}`}
-                  </div>
-                )}
-              </button>
-              <span className="tabular-nums text-sm" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-                {brl(it.valor)}
-              </span>
-              <button onClick={() => onRemover(it.id)} aria-label={`Remover ${it.nome}`}
-                className="text-stone-400 px-1 focus:outline-none focus:ring-2 focus:ring-stone-800">×</button>
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 }
