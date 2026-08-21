@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
-import { MESES, novoCaderno, ativoEm, faltam, rotuloMes } from "./lib/caderno";
+import { MESES, novoCaderno, ativoEm, faltam, rotuloMes, fecharMes } from "./lib/caderno";
 import AbaMes from "./components/AbaMes.jsx";
 import AbaProjecao from "./components/AbaProjecao.jsx";
 import ModalFecharMes from "./components/ModalFecharMes.jsx";
@@ -174,16 +174,8 @@ function CadernoContas({ session }) {
 
   const virarMes = async () => {
     const snapshot = dados;
-    const novos = itens
-      .map((i) => (i.tipo === "fixo" ? i : { ...i, paga: i.paga + 1 }))
-      .filter((i) => i.tipo === "fixo" || i.paga <= i.total);
     const ok = await salvar(
-      {
-        ...dados,
-        itens: novos,
-        mesBase: (mesBase + 1) % 12,
-        anoBase: anoBase + (mesBase === 11 ? 1 : 0),
-      },
+      { ...dados, ...fecharMes(dados) },
       { dados_anterior: snapshot }
     );
     if (ok) setDadosAnterior(snapshot);

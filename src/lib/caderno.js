@@ -28,3 +28,15 @@ export const rotuloMes = (base, ano, offset) => {
   const a = ano + Math.floor((base + offset) / 12);
   return { nome: MESES[i], ano: a };
 };
+
+// Avança todas as parcelas em 1, remove as que chegaram ao fim e vira o mês base.
+export const fecharMes = ({ itens, mesBase, anoBase }) => {
+  const novosItens = itens
+    .map((it) => (it.tipo === "fixo" ? it : { ...it, paga: it.paga + 1 }))
+    .filter((it) => it.tipo === "fixo" || it.paga <= it.total);
+  return {
+    itens: novosItens,
+    mesBase: (mesBase + 1) % 12,
+    anoBase: anoBase + (mesBase === 11 ? 1 : 0),
+  };
+};
