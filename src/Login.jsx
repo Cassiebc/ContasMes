@@ -1,6 +1,20 @@
 import React, { useState } from "react";
 import { supabase } from "./supabase";
 
+const traduzirErro = (msg) => {
+  const mapa = {
+    "Invalid login credentials": "E-mail ou senha não conferem.",
+    "User already registered": "Esse e-mail já tem conta. Tente entrar.",
+    "Email not confirmed": "Confirme o e-mail que enviamos antes de entrar.",
+    "Password should be at least 6 characters": "A senha precisa ter pelo menos 6 caracteres.",
+  };
+  if (mapa[msg]) return mapa[msg];
+  if (/email address .* is invalid/i.test(msg)) return "Esse e-mail não parece válido.";
+  if (/rate limit/i.test(msg)) return "Muitas tentativas em pouco tempo. Espere um pouco e tente de novo.";
+  if (/failed to fetch|network/i.test(msg)) return "Sem conexão com o servidor. Verifique a internet e tente de novo.";
+  return msg;
+};
+
 export default function Login() {
   const [modo, setModo] = useState("entrar");
   const [email, setEmail] = useState("");
@@ -19,24 +33,23 @@ export default function Login() {
       return;
     }
     setOcupado(true);
-    const fn = modo === "entrar" ? "signInWithPassword" : "signUp";
-    const { error } = await supabase.auth[fn]({ email: email.trim(), password: senha });
-    setOcupado(false);
-
-    if (error) {
-      const mapa = {
-        "Invalid login credentials": "E-mail ou senha não conferem.",
-        "User already registered": "Esse e-mail já tem conta. Tente entrar.",
-        "Email not confirmed": "Confirme o e-mail que enviamos antes de entrar.",
-      };
-      setMsg({ tipo: "erro", texto: mapa[error.message] || error.message });
-      return;
-    }
-    if (modo === "criar") {
-      setMsg({
-        tipo: "ok",
-        texto: "Conta criada. Se pedirem confirmação, abra o e-mail que enviamos.",
-      });
+    try {
+      const fn = modo === "entrar" ? "signInWithPassword" : "signUp";
+      const { error } = await supabase.auth[fn]({ email: email.trim(), password: senha });
+      if (error) {
+        setMsg({ tipo: "erro", texto: traduzirErro(error.message) });
+        return;
+      }
+      if (modo === "criar") {
+        setMsg({
+          tipo: "ok",
+          texto: "Conta criada. Se pedirem confirmação, abra o e-mail que enviamos.",
+        });
+      }
+    } catch (e) {
+      setMsg({ tipo: "erro", texto: traduzirErro(e?.message || String(e)) });
+    } finally {
+      setOcupado(false);
     }
   };
 
