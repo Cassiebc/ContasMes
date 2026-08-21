@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { brl, MESES } from "../lib/caderno";
+import Secao from "./Secao";
+import CardTotal from "./CardTotal";
 
 export default function AbaHistorico({ historico }) {
   const [aberto, setAberto] = useState(null);
@@ -23,7 +25,11 @@ export default function AbaHistorico({ historico }) {
   return (
     <div>
       {ordenado.map((h, idx) => {
-        const totalMes = h.itens.reduce((s, it) => s + it.valor, 0);
+        const fixos = h.itens.filter((i) => i.tipo === "fixo");
+        const parcelados = h.itens.filter((i) => i.tipo === "parcelado");
+        const totalFixos = fixos.reduce((s, it) => s + it.valor, 0);
+        const totalParcelados = parcelados.reduce((s, it) => s + it.valor, 0);
+        const totalMes = totalFixos + totalParcelados;
         const expandido = aberto === idx;
         return (
           <div key={idx} className="border-b border-stone-300">
@@ -39,16 +45,15 @@ export default function AbaHistorico({ historico }) {
               </span>
             </button>
             {expandido && (
-              <div className="pb-3 pl-5 space-y-1">
+              <div className="pb-5 pl-5">
                 {h.itens.length === 0 ? (
-                  <p className="text-xs text-stone-500">Sem lançamentos.</p>
+                  <p className="text-xs text-stone-500 pb-2">Sem lançamentos.</p>
                 ) : (
-                  h.itens.map((it) => (
-                    <div key={it.id} className="flex justify-between text-xs text-stone-600">
-                      <span>{it.nome}</span>
-                      <span className="tabular-nums">{brl(it.valor)}</span>
-                    </div>
-                  ))
+                  <>
+                    <CardTotal total={totalMes} fixos={totalFixos} parcelado={totalParcelados} />
+                    <Secao titulo="fixos" itens={fixos} offset={0} readOnly />
+                    <Secao titulo="parcelado" itens={parcelados} offset={0} readOnly />
+                  </>
                 )}
               </div>
             )}
