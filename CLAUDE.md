@@ -14,8 +14,10 @@ projeto, para a próxima sessão não perder o contexto.
 
 - Commits vão para `dev`. Só depois de testado é que `dev` é mesclada em
   `main`. Confirme com a usuária antes de mesclar e antes de dar push.
-- Nada disso publica: o deploy é sempre manual (`vercel --prod`), e também
-  só com o aval dela.
+- **Push em `main` publica em produção na hora** — a Vercel está ligada ao
+  GitHub e faz o deploy sozinha. Trate "dar push em main" e "publicar" como a
+  mesma decisão, e deixe isso explícito ao pedir o aval dela. Push em `dev`
+  não publica.
 - Rode `npm test` e `npm run build` antes de propor um commit.
 
 ## Armadilhas conhecidas

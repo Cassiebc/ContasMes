@@ -20,8 +20,13 @@ sessão, clonar/atualizar o repositório e trabalhar a partir dele, em vez de
 assumir um caminho fixo.
 
 Fluxo de trabalho: commits vão para `dev`, são testados, e só então `dev` é
-mesclada em `main`. Nem o merge nem o push publicam nada — o deploy é sempre
-manual (`vercel --prod`).
+mesclada em `main`.
+
+**Dar push em `main` publica em produção.** O projeto na Vercel está ligado ao
+repositório no GitHub, então todo push nessa branch dispara um deploy sozinho
+(dá pra confirmar pela URL `cadernocontas-git-main-*` nos deploys). Push em
+`dev` não publica. `vercel --prod` continua funcionando para publicar à mão,
+mas não é necessário.
 
 ## Stack
 
@@ -188,6 +193,21 @@ Pendências conhecidas (decisão do usuário, não bugs):
 O service worker mantém a **interface** funcionando sem internet, mas os dados
 vêm do servidor. Sem conexão dá para abrir o app e ver a última tela
 carregada, mas não dá para salvar — e um aviso aparece dizendo isso.
+
+## Atualização depois de um deploy
+
+`lib/atualizacao.js` guarda qual bundle está rodando e, quando o app volta pro
+foco, compara com o que o `index.html` do servidor está entregando. Se são
+diferentes, saiu versão nova: limpa os caches e recarrega.
+
+Isso existe porque o app instalado na tela inicial **não recarrega sozinho** —
+ele retoma com o JavaScript que baixou da primeira vez e pode ficar dias
+assim. E não dá pra resolver pelo service worker: o `sw.js` é byte a byte o
+mesmo arquivo em todo deploy, então o navegador nunca o considera novo e o
+`skipWaiting()` nunca roda de novo.
+
+Se um dia mudar a estratégia do `sw.js`, lembre que o arquivo precisa mudar de
+conteúdo para o navegador sequer perceber.
 
 ## Deploy
 
