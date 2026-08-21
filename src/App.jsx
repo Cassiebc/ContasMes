@@ -72,6 +72,18 @@ function CadernoContas({ session }) {
   const [form, setForm] = useState(null);
   const [confirmarFechar, setConfirmarFechar] = useState(false);
   const [dadosAnterior, setDadosAnterior] = useState(null);
+  const [online, setOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
 
   useEffect(() => {
     let vivo = true;
@@ -275,6 +287,13 @@ function CadernoContas({ session }) {
             </div>
           </div>
         </header>
+
+        {!online && (
+          <div className="mb-4 border-l-2 border-stone-800 bg-stone-200 px-3 py-2 text-sm">
+            Sem internet. Dá para ver o caderno, mas o que você alterar agora
+            não vai salvar até a conexão voltar.
+          </div>
+        )}
 
         {erro && (
           <div className="mb-4 border-l-2 border-stone-800 bg-stone-200 px-3 py-2 text-sm">
