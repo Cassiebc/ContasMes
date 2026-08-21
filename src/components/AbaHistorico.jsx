@@ -14,15 +14,16 @@ export default function AbaHistorico({ historico, onVerMes }) {
     );
   }
 
-  // mais recente primeiro
-  const ordenado = [...historico].reverse();
+  // mais recente primeiro, mas guarda o índice real (não invertido) pra
+  // navegação — é ele que vira offset negativo em App.jsx.
+  const ordenado = historico.map((h, i) => [h, i]).reverse();
 
   return (
     <div>
-      {ordenado.map((h, idx) => {
+      {ordenado.map(([h, idx]) => {
         const totalMes = h.itens.reduce((s, it) => s + it.valor, 0);
         return (
-          <button key={idx} onClick={() => onVerMes(h)}
+          <button key={idx} onClick={() => onVerMes(idx)}
             className="w-full flex justify-between items-baseline py-3 border-b border-stone-300 text-left focus:outline-none focus:ring-2 focus:ring-stone-800">
             <span className="lowercase text-sm flex items-center gap-2">
               <span className="text-stone-400">›</span>

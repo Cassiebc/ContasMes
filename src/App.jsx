@@ -48,7 +48,6 @@ function CadernoContas({ session }) {
   const [form, setForm] = useState(null);
   const [confirmarFechar, setConfirmarFechar] = useState(false);
   const [historico, setHistorico] = useState([]);
-  const [historicoSelecionado, setHistoricoSelecionado] = useState(null);
   const [online, setOnline] = useState(() => navigator.onLine);
 
   useEffect(() => {
@@ -123,6 +122,29 @@ function CadernoContas({ session }) {
     return true;
   };
 
+  // Edita só a coluna historico, sem tocar em dados (o mês atual). Usado
+  // pra lançar/editar/remover itens de um mês já fechado, sem afetar nada
+  // dos meses entre ele e o atual.
+  const salvarHistorico = async (novoHistorico) => {
+    const anterior = historico;
+    setHistorico(novoHistorico);
+    setSalvando(true);
+    setSalvo(false);
+    const { error } = await supabase
+      .from("cadernos")
+      .update({ historico: novoHistorico, updated_at: new Date().toISOString() })
+      .eq("user_id", session.user.id);
+    setSalvando(false);
+    if (error) {
+      setHistorico(anterior);
+      setErro("Não deu para salvar. A alteração foi desfeita — tente de novo.");
+      return false;
+    }
+    setErro(null);
+    setSalvo(true);
+    return true;
+  };
+
   if (carregando) return <Abrindo />;
 
   if (!dados) {
@@ -143,6 +165,12 @@ function CadernoContas({ session }) {
 
   const { itens, mesBase, anoBase } = dados;
 
+  // offset < 0 = mês já fechado, dentro do historico. offset 0 = mês atual
+  // (dados.itens, editável de verdade). offset > 0 = projeção futura.
+  const emHistorico = offset < 0;
+  const idxHistorico = emHistorico ? offset + historico.length : null;
+  const entryHistorico = emHistorico ? historico[idxHistorico] : null;
+
   const doMes = (off) => itens.filter((it) => ativoEm(it, off));
   const somaFixos = (off) =>
     doMes(off).filter((i) => i.tipo === "fixo").reduce((s, i) => s + i.valor, 0);
@@ -158,6 +186,13 @@ function CadernoContas({ session }) {
   const maxTotal = Math.max(1, ...meses.map(total));
 
   const remover = (id) => salvar({ ...dados, itens: itens.filter((i) => i.id !== id) });
+
+  const removerHistorico = (idx, id) => {
+    const novoHistorico = historico.map((h, i) =>
+      i === idx ? { ...h, itens: h.itens.filter((it) => it.id !== id) } : h
+    );
+    salvarHistorico(novoHistorico);
+  };
 
   const gravarForm = () => {
     const nome = (form.nome || "").trim();
@@ -175,10 +210,22 @@ function CadernoContas({ session }) {
           }
         : {}),
     };
-    const lista = form.id
-      ? itens.map((i) => (i.id === form.id ? novo : i))
-      : [...itens, novo];
-    salvar({ ...dados, itens: lista });
+
+    if (emHistorico) {
+      const novoHistorico = historico.map((h, i) => {
+        if (i !== idxHistorico) return h;
+        const lista = form.id
+          ? h.itens.map((it) => (it.id === form.id ? novo : it))
+          : [...h.itens, novo];
+        return { ...h, itens: lista };
+      });
+      salvarHistorico(novoHistorico);
+    } else {
+      const lista = form.id
+        ? itens.map((i) => (i.id === form.id ? novo : i))
+        : [...itens, novo];
+      salvar({ ...dados, itens: lista });
+    }
     setForm(null);
   };
 
@@ -251,8 +298,8 @@ function CadernoContas({ session }) {
     e.target.value = "";
   };
 
-  const m = historicoSelecionado
-    ? { nome: MESES[historicoSelecionado.mesBase], ano: historicoSelecionado.anoBase }
+  const m = emHistorico
+    ? { nome: MESES[entryHistorico.mesBase], ano: entryHistorico.anoBase }
     : rotuloMes(mesBase, anoBase, offset);
 
   return (
@@ -278,16 +325,14 @@ function CadernoContas({ session }) {
             <h1 className="text-3xl lowercase" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
               {m.nome} <span className="text-stone-400">{m.ano}</span>
             </h1>
-            {!historicoSelecionado && (
-              <div className="flex gap-1">
-                <button onClick={() => setOffset(Math.max(0, offset - 1))}
-                        disabled={offset === 0}
-                        className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">←</button>
-                <button onClick={() => setOffset(Math.min(meses.length - 1, offset + 1))}
-                        disabled={offset >= meses.length - 1}
-                        className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">→</button>
-              </div>
-            )}
+            <div className="flex gap-1">
+              <button onClick={() => setOffset(Math.max(-historico.length, offset - 1))}
+                      disabled={offset <= -historico.length}
+                      className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">←</button>
+              <button onClick={() => setOffset(Math.min(meses.length - 1, offset + 1))}
+                      disabled={offset >= meses.length - 1}
+                      className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">→</button>
+            </div>
           </div>
         </header>
 
@@ -304,10 +349,12 @@ function CadernoContas({ session }) {
           </div>
         )}
 
-        {historicoSelecionado && aba === "mes" && (
+        {emHistorico && aba === "mes" && (
           <div className="mb-4 border-l-2 border-stone-400 bg-stone-200 px-3 py-2 text-sm flex justify-between items-center gap-3">
-            <span className="text-stone-600">Mês fechado — histórico, somente leitura.</span>
-            <button onClick={() => setHistoricoSelecionado(null)}
+            <span className="text-stone-600">
+              Mês fechado — o que você lançar aqui fica só nesse mês, sem mexer no atual.
+            </span>
+            <button onClick={() => setOffset(0)}
               className="underline text-stone-800 shrink-0 focus:outline-none focus:ring-2 focus:ring-stone-800">
               voltar
             </button>
@@ -316,7 +363,7 @@ function CadernoContas({ session }) {
 
         <div className="flex gap-6 border-b border-stone-300 mb-5">
           {[["mes", "o mês"], ["projecao", "projeção"], ["historico", "histórico"]].map(([k, r]) => (
-            <button key={k} onClick={() => { setAba(k); setHistoricoSelecionado(null); }}
+            <button key={k} onClick={() => { setAba(k); setOffset(0); }}
               className={`pb-2 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-stone-800 ${
                 aba === k ? "border-b-2 border-stone-900" : "text-stone-500"}`}>
               {r}
@@ -325,8 +372,12 @@ function CadernoContas({ session }) {
         </div>
 
         {aba === "mes" && (
-          historicoSelecionado ? (
-            <AbaMesHistorico entry={historicoSelecionado} />
+          emHistorico ? (
+            <AbaMesHistorico
+              entry={entryHistorico}
+              onEditar={setForm}
+              onRemover={(id) => removerHistorico(idxHistorico, id)}
+            />
           ) : (
             <AbaMes
               offset={offset}
@@ -357,7 +408,7 @@ function CadernoContas({ session }) {
         {aba === "historico" && (
           <AbaHistorico
             historico={historico}
-            onVerMes={(h) => { setHistoricoSelecionado(h); setAba("mes"); }}
+            onVerMes={(idx) => { setOffset(idx - historico.length); setAba("mes"); }}
           />
         )}
       </div>
@@ -365,23 +416,16 @@ function CadernoContas({ session }) {
       <div className="fixed bottom-0 left-0 right-0 bg-stone-100 border-t border-stone-300"
            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="max-w-lg mx-auto px-5 py-3 flex gap-3">
-          {historicoSelecionado ? (
-            <button onClick={() => setHistoricoSelecionado(null)}
-              className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800">
-              voltar pro mês atual
-            </button>
-          ) : (
-            <>
-              <button onClick={() => setForm({ tipo: "fixo", nome: "", valor: "", paga: 1, total: 3 })}
-                className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800">
-                lançar conta
-              </button>
-              <button onClick={() => setConfirmarFechar(true)}
-                className="px-4 border border-stone-400 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
-                fechar mês
-              </button>
-            </>
-          )}
+          <button onClick={() => setForm({ tipo: "fixo", nome: "", valor: "", paga: 1, total: 3 })}
+            className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800">
+            lançar conta
+          </button>
+          <button onClick={() => setConfirmarFechar(true)}
+            disabled={offset !== 0}
+            title={offset !== 0 ? "só dá pra fechar o mês atual" : undefined}
+            className="px-4 border border-stone-400 text-sm disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">
+            fechar mês
+          </button>
         </div>
       </div>
 
