@@ -2,22 +2,12 @@ import { brl } from "../lib/caderno";
 import Secao from "./Secao";
 
 export default function AbaMes({
-  dadosAnterior, offset, onDesfazer,
+  offset,
   totalMes, somaFixosMes, somaParcelasMes,
   itensDoMes, onEditar, onRemover,
 }) {
   return (
     <>
-      {dadosAnterior && offset === 0 && (
-        <div className="mb-4 border-l-2 border-stone-400 bg-stone-200 px-3 py-2 text-sm flex justify-between items-center gap-3">
-          <span className="text-stone-600">Mês fechado recentemente.</span>
-          <button onClick={onDesfazer}
-            className="underline text-stone-800 shrink-0 focus:outline-none focus:ring-2 focus:ring-stone-800">
-            desfazer
-          </button>
-        </div>
-      )}
-
       <div className="border border-stone-900 p-4 mb-6">
         <div className="flex justify-between items-end">
           <span className="text-[10px] uppercase tracking-[0.2em] text-stone-500">total do mês</span>

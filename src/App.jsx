@@ -4,6 +4,7 @@ import Login from "./Login.jsx";
 import { MESES, novoCaderno, ativoEm, faltam, rotuloMes, fecharMes } from "./lib/caderno";
 import AbaMes from "./components/AbaMes.jsx";
 import AbaProjecao from "./components/AbaProjecao.jsx";
+import AbaHistorico from "./components/AbaHistorico.jsx";
 import ModalFecharMes from "./components/ModalFecharMes.jsx";
 import FormConta from "./components/FormConta.jsx";
 
@@ -45,7 +46,7 @@ function CadernoContas({ session }) {
   const [offset, setOffset] = useState(0);
   const [form, setForm] = useState(null);
   const [confirmarFechar, setConfirmarFechar] = useState(false);
-  const [dadosAnterior, setDadosAnterior] = useState(null);
+  const [historico, setHistorico] = useState([]);
   const [online, setOnline] = useState(() => navigator.onLine);
 
   useEffect(() => {
@@ -64,7 +65,7 @@ function CadernoContas({ session }) {
     (async () => {
       const { data, error } = await supabase
         .from("cadernos")
-        .select("dados, dados_anterior")
+        .select("dados, dados_anterior, historico")
         .eq("user_id", session.user.id)
         .maybeSingle();
 
@@ -74,7 +75,14 @@ function CadernoContas({ session }) {
         setDados(null);
       } else if (data) {
         setDados(data.dados);
-        setDadosAnterior(data.dados_anterior ?? null);
+        // Migra o snapshot único do formato antigo (dados_anterior) pra
+        // dentro do histórico, se ainda não tiver sido migrado.
+        const hist = Array.isArray(data.historico) ? data.historico : [];
+        setHistorico(
+          hist.length === 0 && data.dados_anterior
+            ? [{ ...data.dados_anterior, fechadoEm: null }]
+            : hist
+        );
       } else {
         // Primeiro acesso: cria um caderno vazio no mês corrente.
         const inicial = novoCaderno();
@@ -173,21 +181,17 @@ function CadernoContas({ session }) {
   };
 
   const virarMes = async () => {
-    const snapshot = dados;
+    const novoHistorico = [
+      ...historico,
+      { mesBase, anoBase, itens, fechadoEm: new Date().toISOString() },
+    ];
     const ok = await salvar(
       { ...dados, ...fecharMes(dados) },
-      { dados_anterior: snapshot }
+      { historico: novoHistorico }
     );
-    if (ok) setDadosAnterior(snapshot);
+    if (ok) setHistorico(novoHistorico);
     setOffset(0);
     setConfirmarFechar(false);
-  };
-
-  const desfazerFechamento = async () => {
-    if (!dadosAnterior) return;
-    const ok = await salvar(dadosAnterior, { dados_anterior: null });
-    if (ok) setDadosAnterior(null);
-    setOffset(0);
   };
 
   const exportar = () => {
@@ -295,7 +299,7 @@ function CadernoContas({ session }) {
         )}
 
         <div className="flex gap-6 border-b border-stone-300 mb-5">
-          {[["mes", "o mês"], ["projecao", "projeção"]].map(([k, r]) => (
+          {[["mes", "o mês"], ["projecao", "projeção"], ["historico", "histórico"]].map(([k, r]) => (
             <button key={k} onClick={() => setAba(k)}
               className={`pb-2 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-stone-800 ${
                 aba === k ? "border-b-2 border-stone-900" : "text-stone-500"}`}>
@@ -306,9 +310,7 @@ function CadernoContas({ session }) {
 
         {aba === "mes" && (
           <AbaMes
-            dadosAnterior={dadosAnterior}
             offset={offset}
-            onDesfazer={desfazerFechamento}
             totalMes={total(offset)}
             somaFixosMes={somaFixos(offset)}
             somaParcelasMes={somaParcelas(offset)}
@@ -331,6 +333,8 @@ function CadernoContas({ session }) {
             onImportar={importar}
           />
         )}
+
+        {aba === "historico" && <AbaHistorico historico={historico} />}
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 bg-stone-100 border-t border-stone-300"

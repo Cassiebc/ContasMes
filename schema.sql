@@ -6,9 +6,16 @@ create table if not exists public.cadernos (
   updated_at timestamptz not null default now()
 );
 
--- Snapshot do caderno de antes do último "fechar mês", pra dar pra desfazer.
--- "if not exists" deixa este script seguro de rodar de novo em bancos que já existiam.
+-- Coluna antiga (dados_anterior) foi substituída por um histórico completo.
+-- Mantida na tabela sem uso pra não descartar snapshot de quem já tinha —
+-- o app migra esse valor pra dentro de "historico" sozinho no primeiro
+-- carregamento depois do deploy. "if not exists" deixa este script seguro
+-- de rodar de novo em bancos que já existiam.
 alter table public.cadernos add column if not exists dados_anterior jsonb;
+
+-- Um registro por mês fechado: { mesBase, anoBase, itens, fechadoEm }.
+-- Cresce pra sempre — é só nomes/valores/parcelas, não pesa.
+alter table public.cadernos add column if not exists historico jsonb not null default '[]'::jsonb;
 
 alter table public.cadernos enable row level security;
 
