@@ -66,6 +66,7 @@ function CadernoContas({ session }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const [salvo, setSalvo] = useState(false);
   const [aba, setAba] = useState("mes");
   const [offset, setOffset] = useState(0);
   const [form, setForm] = useState(null);
@@ -99,12 +100,19 @@ function CadernoContas({ session }) {
     return () => { vivo = false; };
   }, [session.user.id]);
 
+  useEffect(() => {
+    if (!salvo) return;
+    const t = setTimeout(() => setSalvo(false), 2000);
+    return () => clearTimeout(t);
+  }, [salvo]);
+
   // `extra` permite incluir outras colunas no mesmo upsert (ex.: dados_anterior),
   // sem afetá-las quando omitido — o upsert só sobrescreve as colunas enviadas.
   const salvar = async (novo, extra = {}) => {
     const anterior = dados;
     setDados(novo);
     setSalvando(true);
+    setSalvo(false);
     const { error } = await supabase
       .from("cadernos")
       .upsert({ user_id: session.user.id, dados: novo, updated_at: new Date().toISOString(), ...extra });
@@ -115,6 +123,7 @@ function CadernoContas({ session }) {
       return false;
     }
     setErro(null);
+    setSalvo(true);
     return true;
   };
 
@@ -244,7 +253,8 @@ function CadernoContas({ session }) {
               {session.user.email}
             </p>
             <div className="flex items-center gap-3 shrink-0">
-              {salvando && <span className="text-[10px] text-stone-400">salvando</span>}
+              {salvando && <span className="text-[10px] text-stone-400">salvando…</span>}
+              {!salvando && salvo && <span className="text-[10px] text-stone-400">salvo</span>}
               <button onClick={() => supabase.auth.signOut()}
                 className="text-[10px] uppercase tracking-[0.2em] text-stone-500 underline focus:outline-none focus:ring-2 focus:ring-stone-800">
                 sair
