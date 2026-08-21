@@ -69,6 +69,7 @@ function CadernoContas({ session }) {
   const [aba, setAba] = useState("mes");
   const [offset, setOffset] = useState(0);
   const [form, setForm] = useState(null);
+  const [confirmarFechar, setConfirmarFechar] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -182,6 +183,7 @@ function CadernoContas({ session }) {
       anoBase: anoBase + (mesBase === 11 ? 1 : 0),
     });
     setOffset(0);
+    setConfirmarFechar(false);
   };
 
   const exportar = () => {
@@ -361,12 +363,36 @@ function CadernoContas({ session }) {
             className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800">
             lançar conta
           </button>
-          <button onClick={virarMes}
+          <button onClick={() => setConfirmarFechar(true)}
             className="px-4 border border-stone-400 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
             fechar mês
           </button>
         </div>
       </div>
+
+      {confirmarFechar && (
+        <div className="fixed inset-0 bg-stone-900 bg-opacity-40 flex items-end sm:items-center justify-center z-10">
+          <div className="bg-stone-100 w-full max-w-lg p-5">
+            <h2 className="text-xl lowercase mb-3" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
+              fechar {m.nome}?
+            </h2>
+            <p className="text-sm text-stone-600 mb-5">
+              Cada parcela avança uma casa e o mês vira {rotuloMes(mesBase, anoBase, 1).nome}.
+              Não dá pra desfazer.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={virarMes}
+                className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
+                fechar mês
+              </button>
+              <button onClick={() => setConfirmarFechar(false)}
+                className="px-5 border border-stone-400 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
+                cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {form && (
         <div className="fixed inset-0 bg-stone-900 bg-opacity-40 flex items-end sm:items-center justify-center z-10">
