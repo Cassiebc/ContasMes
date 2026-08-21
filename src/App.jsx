@@ -474,11 +474,14 @@ function CadernoContas({ session, tema, onAlternarTema }) {
           </div>
         )}
 
-        <div className="flex gap-6 border-b border-stone-300 dark:border-stone-700 mb-5">
+        <div className="flex gap-2 mb-6">
           {[["mes", "o mês"], ["projecao", "projeção"], ["historico", "histórico"]].map(([k, r]) => (
             <button key={k} onClick={() => { setAba(k); setOffset(0); }}
-              className={`pb-2 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300 ${
-                aba === k ? "border-b-2 border-stone-900 dark:border-stone-100" : "text-stone-500 dark:text-stone-400"}`}>
+              aria-current={aba === k ? "page" : undefined}
+              className={`flex-1 py-2.5 text-sm tracking-wide border focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300 ${
+                aba === k
+                  ? "bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 border-stone-900 dark:border-stone-100"
+                  : "border-stone-400 dark:border-stone-600 text-stone-500 dark:text-stone-400"}`}>
               {r}
             </button>
           ))}
