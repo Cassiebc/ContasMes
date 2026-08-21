@@ -234,6 +234,33 @@ function CadernoContas({ session }) {
     URL.revokeObjectURL(url);
   };
 
+  // Excel em PT-BR espera ; como separador e , como decimal — usar , como
+  // delimitador junto de valores com vírgula decimal quebraria a leitura.
+  const exportarCsv = () => {
+    const campo = (v) => {
+      const s = String(v ?? "");
+      return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const linhas = [["nome", "tipo", "valor", "parcela atual", "total de parcelas"]];
+    for (const it of itens) {
+      linhas.push([
+        it.nome,
+        it.tipo,
+        String(it.valor).replace(".", ","),
+        it.tipo === "parcelado" ? it.paga : "",
+        it.tipo === "parcelado" ? it.total : "",
+      ]);
+    }
+    const csv = linhas.map((l) => l.map(campo).join(";")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `caderno-${MESES[mesBase]}-${anoBase}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const importar = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -397,15 +424,21 @@ function CadernoContas({ session }) {
               <div className="flex gap-3">
                 <button onClick={exportar}
                   className="flex-1 border border-stone-400 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
-                  baixar cópia
+                  baixar JSON
                 </button>
-                <label className="flex-1 border border-stone-400 py-2 text-sm text-center cursor-pointer">
-                  restaurar
-                  <input type="file" accept="application/json" className="hidden" onChange={importar} />
-                </label>
+                <button onClick={exportarCsv}
+                  className="flex-1 border border-stone-400 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
+                  baixar CSV
+                </button>
               </div>
+              <label className="block mt-3 border border-stone-400 py-2 text-sm text-center cursor-pointer focus-within:ring-2 focus-within:ring-stone-800">
+                restaurar
+                <input type="file" accept="application/json" className="hidden" onChange={importar} />
+              </label>
               <p className="text-xs text-stone-500 mt-2">
-                Os dados ficam só neste iPhone. Baixe uma cópia de vez em quando.
+                Os dados já ficam salvos no servidor. O JSON serve para
+                restaurar aqui mesmo; o CSV é só para abrir em planilha —
+                restaurar só aceita o formato JSON.
               </p>
             </div>
           </div>
