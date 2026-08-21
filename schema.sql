@@ -17,6 +17,12 @@ alter table public.cadernos add column if not exists dados_anterior jsonb;
 -- Cresce pra sempre — é só nomes/valores/parcelas, não pesa.
 alter table public.cadernos add column if not exists historico jsonb not null default '[]'::jsonb;
 
+-- Espelho de historico, só que pra frente: meses concretos já planejados
+-- que ainda não chegaram a ser o mês atual. Populado só pela ação
+-- "abrir mês" (reabrir um mês fechado como atual, empurrando o que
+-- vinha depois pra cá) e consumido por "fechar mês" quando existir.
+alter table public.cadernos add column if not exists futuro jsonb not null default '[]'::jsonb;
+
 alter table public.cadernos enable row level security;
 
 -- Cada usuário só enxerga e só mexe na própria linha.

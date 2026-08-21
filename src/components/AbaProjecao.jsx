@@ -1,38 +1,30 @@
-import { brl, ativoEm, rotuloMes } from "../lib/caderno";
+import { brl } from "../lib/caderno";
 
-export default function AbaProjecao({
-  meses, mesBase, anoBase, total, maxTotal, itens,
-  onExportar, onExportarCsv, onImportar,
-}) {
+export default function AbaProjecao({ resumos, onExportar, onExportarCsv, onImportar }) {
+  const maxTotal = Math.max(1, ...resumos.map((r) => r.total));
+
   return (
     <div className="space-y-3">
-      {meses.map((o) => {
-        const r = rotuloMes(mesBase, anoBase, o);
-        const t = total(o);
-        const encerram = itens.filter(
-          (i) => i.tipo === "parcelado" && ativoEm(i, o) && !ativoEm(i, o + 1)
-        );
-        return (
-          <div key={o} className="border-b border-stone-300 dark:border-stone-700 pb-3">
-            <div className="flex justify-between items-baseline">
-              <span className="lowercase text-sm">
-                {r.nome} <span className="text-stone-400 dark:text-stone-500">{r.ano}</span>
-              </span>
-              <span className="tabular-nums" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-                {brl(t)}
-              </span>
-            </div>
-            <div className="h-1.5 bg-stone-200 dark:bg-stone-800 mt-2">
-              <div className="h-full bg-stone-900 dark:bg-stone-100" style={{ width: `${(t / maxTotal) * 100}%` }} />
-            </div>
-            {encerram.length > 0 && (
-              <p className="text-xs text-stone-500 dark:text-stone-400 mt-2">
-                última parcela: {encerram.map((e) => e.nome).join(", ")}
-              </p>
-            )}
+      {resumos.map((r) => (
+        <div key={r.offset} className="border-b border-stone-300 dark:border-stone-700 pb-3">
+          <div className="flex justify-between items-baseline">
+            <span className="lowercase text-sm">
+              {r.nome} <span className="text-stone-400 dark:text-stone-500">{r.ano}</span>
+            </span>
+            <span className="tabular-nums" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
+              {brl(r.total)}
+            </span>
           </div>
-        );
-      })}
+          <div className="h-1.5 bg-stone-200 dark:bg-stone-800 mt-2">
+            <div className="h-full bg-stone-900 dark:bg-stone-100" style={{ width: `${(r.total / maxTotal) * 100}%` }} />
+          </div>
+          {r.encerram.length > 0 && (
+            <p className="text-xs text-stone-500 dark:text-stone-400 mt-2">
+              última parcela: {r.encerram.map((e) => e.nome).join(", ")}
+            </p>
+          )}
+        </div>
+      ))}
       <p className="text-xs text-stone-500 dark:text-stone-400 pt-2">
         A projeção usa só o que está lançado. Compras novas entram por cima.
       </p>
