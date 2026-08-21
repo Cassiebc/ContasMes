@@ -70,13 +70,14 @@ function CadernoContas({ session }) {
   const [offset, setOffset] = useState(0);
   const [form, setForm] = useState(null);
   const [confirmarFechar, setConfirmarFechar] = useState(false);
+  const [dadosAnterior, setDadosAnterior] = useState(null);
 
   useEffect(() => {
     let vivo = true;
     (async () => {
       const { data, error } = await supabase
         .from("cadernos")
-        .select("dados")
+        .select("dados, dados_anterior")
         .eq("user_id", session.user.id)
         .maybeSingle();
 
@@ -86,6 +87,7 @@ function CadernoContas({ session }) {
         setDados(null);
       } else if (data) {
         setDados(data.dados);
+        setDadosAnterior(data.dados_anterior ?? null);
       } else {
         // Primeiro acesso: cria um caderno vazio no mês corrente.
         const inicial = novoCaderno();
@@ -97,20 +99,23 @@ function CadernoContas({ session }) {
     return () => { vivo = false; };
   }, [session.user.id]);
 
-  const salvar = async (novo) => {
+  // `extra` permite incluir outras colunas no mesmo upsert (ex.: dados_anterior),
+  // sem afetá-las quando omitido — o upsert só sobrescreve as colunas enviadas.
+  const salvar = async (novo, extra = {}) => {
     const anterior = dados;
     setDados(novo);
     setSalvando(true);
     const { error } = await supabase
       .from("cadernos")
-      .upsert({ user_id: session.user.id, dados: novo, updated_at: new Date().toISOString() });
+      .upsert({ user_id: session.user.id, dados: novo, updated_at: new Date().toISOString(), ...extra });
     setSalvando(false);
     if (error) {
       setDados(anterior);
       setErro("Não deu para salvar. A alteração foi desfeita — tente de novo.");
-    } else {
-      setErro(null);
+      return false;
     }
+    setErro(null);
+    return true;
   };
 
   if (carregando) return <Abrindo />;
@@ -172,18 +177,30 @@ function CadernoContas({ session }) {
     setForm(null);
   };
 
-  const virarMes = () => {
+  const virarMes = async () => {
+    const snapshot = dados;
     const novos = itens
       .map((i) => (i.tipo === "fixo" ? i : { ...i, paga: i.paga + 1 }))
       .filter((i) => i.tipo === "fixo" || i.paga <= i.total);
-    salvar({
-      ...dados,
-      itens: novos,
-      mesBase: (mesBase + 1) % 12,
-      anoBase: anoBase + (mesBase === 11 ? 1 : 0),
-    });
+    const ok = await salvar(
+      {
+        ...dados,
+        itens: novos,
+        mesBase: (mesBase + 1) % 12,
+        anoBase: anoBase + (mesBase === 11 ? 1 : 0),
+      },
+      { dados_anterior: snapshot }
+    );
+    if (ok) setDadosAnterior(snapshot);
     setOffset(0);
     setConfirmarFechar(false);
+  };
+
+  const desfazerFechamento = async () => {
+    if (!dadosAnterior) return;
+    const ok = await salvar(dadosAnterior, { dados_anterior: null });
+    if (ok) setDadosAnterior(null);
+    setOffset(0);
   };
 
   const exportar = () => {
@@ -267,6 +284,16 @@ function CadernoContas({ session }) {
 
         {aba === "mes" && (
           <>
+            {dadosAnterior && offset === 0 && (
+              <div className="mb-4 border-l-2 border-stone-400 bg-stone-200 px-3 py-2 text-sm flex justify-between items-center gap-3">
+                <span className="text-stone-600">Mês fechado recentemente.</span>
+                <button onClick={desfazerFechamento}
+                  className="underline text-stone-800 shrink-0 focus:outline-none focus:ring-2 focus:ring-stone-800">
+                  desfazer
+                </button>
+              </div>
+            )}
+
             <div className="border border-stone-900 p-4 mb-6">
               <div className="flex justify-between items-end">
                 <span className="text-[10px] uppercase tracking-[0.2em] text-stone-500">total do mês</span>

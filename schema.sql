@@ -6,6 +6,10 @@ create table if not exists public.cadernos (
   updated_at timestamptz not null default now()
 );
 
+-- Snapshot do caderno de antes do último "fechar mês", pra dar pra desfazer.
+-- "if not exists" deixa este script seguro de rodar de novo em bancos que já existiam.
+alter table public.cadernos add column if not exists dados_anterior jsonb;
+
 alter table public.cadernos enable row level security;
 
 -- Cada usuário só enxerga e só mexe na própria linha.
