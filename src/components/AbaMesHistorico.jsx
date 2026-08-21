@@ -12,10 +12,10 @@ export default function AbaMesHistorico({ entry, onEditar, onRemover }) {
     <>
       <CardTotal total={totalMes} fixos={totalFixos} parcelado={totalParcelados} />
       {entry.itens.length === 0 ? (
-        <div className="border border-stone-300 border-dashed p-6 text-center">
-          <p className="text-sm text-stone-600 mb-1">Esse mês não teve lançamentos.</p>
-          <p className="text-xs text-stone-500">
-            Toque em <span className="text-stone-800">lançar conta</span> pra
+        <div className="border border-stone-300 dark:border-stone-700 border-dashed p-6 text-center">
+          <p className="text-sm text-stone-600 dark:text-stone-300 mb-1">Esse mês não teve lançamentos.</p>
+          <p className="text-xs text-stone-500 dark:text-stone-400">
+            Toque em <span className="text-stone-800 dark:text-stone-200">lançar conta</span> pra
             adicionar algo aqui — fica só nesse mês, não mexe no atual.
           </p>
         </div>

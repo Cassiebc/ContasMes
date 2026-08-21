@@ -2,16 +2,19 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
 import { MESES, novoCaderno, ativoEm, faltam, rotuloMes, fecharMes } from "./lib/caderno";
+import { useTema } from "./lib/tema.js";
 import AbaMes from "./components/AbaMes.jsx";
 import AbaProjecao from "./components/AbaProjecao.jsx";
 import AbaHistorico from "./components/AbaHistorico.jsx";
 import AbaMesHistorico from "./components/AbaMesHistorico.jsx";
 import ModalFecharMes from "./components/ModalFecharMes.jsx";
 import FormConta from "./components/FormConta.jsx";
+import BotaoTema from "./components/BotaoTema.jsx";
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [checando, setChecando] = useState(true);
+  const [tema, alternarTema] = useTema();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -23,21 +26,21 @@ export default function App() {
   }, []);
 
   if (checando) return <Abrindo />;
-  if (!session) return <Login />;
-  return <CadernoContas session={session} key={session.user.id} />;
+  if (!session) return <Login tema={tema} onAlternarTema={alternarTema} />;
+  return <CadernoContas session={session} tema={tema} onAlternarTema={alternarTema} key={session.user.id} />;
 }
 
 function Abrindo() {
   return (
-    <div className="min-h-screen bg-stone-100 flex items-center justify-center">
-      <p className="text-stone-500 text-sm tracking-widest uppercase">
+    <div className="min-h-screen bg-stone-100 dark:bg-stone-900 flex items-center justify-center">
+      <p className="text-stone-500 dark:text-stone-400 text-sm tracking-widest uppercase">
         abrindo o caderno
       </p>
     </div>
   );
 }
 
-function CadernoContas({ session }) {
+function CadernoContas({ session, tema, onAlternarTema }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -149,13 +152,13 @@ function CadernoContas({ session }) {
 
   if (!dados) {
     return (
-      <div className="min-h-screen bg-stone-100 flex items-center justify-center px-5">
+      <div className="min-h-screen bg-stone-100 dark:bg-stone-900 dark:text-stone-100 flex items-center justify-center px-5">
         <div className="max-w-sm text-center">
           <p className="text-sm mb-4">
             {erro || "Não deu para carregar seus dados."}
           </p>
           <button onClick={() => window.location.reload()}
-            className="border border-stone-400 px-5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
+            className="border border-stone-400 dark:border-stone-600 px-5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
             tentar de novo
           </button>
         </div>
@@ -303,69 +306,70 @@ function CadernoContas({ session }) {
     : rotuloMes(mesBase, anoBase, offset);
 
   return (
-    <div className="min-h-screen bg-stone-100 text-stone-900 pb-28"
+    <div className="min-h-screen bg-stone-100 dark:bg-stone-900 text-stone-900 dark:text-stone-100 pb-28"
          style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
       <div className="max-w-lg mx-auto px-5">
 
         <header className="pt-8 pb-5">
           <div className="flex justify-between items-center">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-stone-500 truncate">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-stone-500 dark:text-stone-400 truncate">
               {session.user.email}
             </p>
             <div className="flex items-center gap-3 shrink-0">
-              {salvando && <span className="text-[10px] text-stone-400">salvando…</span>}
-              {!salvando && salvo && <span className="text-[10px] text-stone-400">salvo</span>}
+              {salvando && <span className="text-[10px] text-stone-400 dark:text-stone-500">salvando…</span>}
+              {!salvando && salvo && <span className="text-[10px] text-stone-400 dark:text-stone-500">salvo</span>}
+              <BotaoTema tema={tema} onAlternar={onAlternarTema} />
               <button onClick={() => supabase.auth.signOut()}
-                className="text-[10px] uppercase tracking-[0.2em] text-stone-500 underline focus:outline-none focus:ring-2 focus:ring-stone-800">
+                className="text-[10px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 underline focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
                 sair
               </button>
             </div>
           </div>
           <div className="flex items-baseline justify-between mt-2">
             <h1 className="text-3xl lowercase" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-              {m.nome} <span className="text-stone-400">{m.ano}</span>
+              {m.nome} <span className="text-stone-400 dark:text-stone-500">{m.ano}</span>
             </h1>
             <div className="flex gap-1">
               <button onClick={() => setOffset(Math.max(-historico.length, offset - 1))}
                       disabled={offset <= -historico.length}
-                      className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">←</button>
+                      className="w-9 h-9 border border-stone-300 dark:border-stone-700 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">←</button>
               <button onClick={() => setOffset(Math.min(meses.length - 1, offset + 1))}
                       disabled={offset >= meses.length - 1}
-                      className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">→</button>
+                      className="w-9 h-9 border border-stone-300 dark:border-stone-700 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">→</button>
             </div>
           </div>
         </header>
 
         {!online && (
-          <div className="mb-4 border-l-2 border-stone-800 bg-stone-200 px-3 py-2 text-sm">
+          <div className="mb-4 border-l-2 border-stone-800 dark:border-stone-200 bg-stone-200 dark:bg-stone-800 px-3 py-2 text-sm">
             Sem internet. Dá para ver o caderno, mas o que você alterar agora
             não vai salvar até a conexão voltar.
           </div>
         )}
 
         {erro && (
-          <div className="mb-4 border-l-2 border-stone-800 bg-stone-200 px-3 py-2 text-sm">
+          <div className="mb-4 border-l-2 border-stone-800 dark:border-stone-200 bg-stone-200 dark:bg-stone-800 px-3 py-2 text-sm">
             {erro}
           </div>
         )}
 
         {emHistorico && aba === "mes" && (
-          <div className="mb-4 border-l-2 border-stone-400 bg-stone-200 px-3 py-2 text-sm flex justify-between items-center gap-3">
-            <span className="text-stone-600">
+          <div className="mb-4 border-l-2 border-stone-400 dark:border-stone-600 bg-stone-200 dark:bg-stone-800 px-3 py-2 text-sm flex justify-between items-center gap-3">
+            <span className="text-stone-600 dark:text-stone-300">
               Mês fechado — o que você lançar aqui fica só nesse mês, sem mexer no atual.
             </span>
             <button onClick={() => setOffset(0)}
-              className="underline text-stone-800 shrink-0 focus:outline-none focus:ring-2 focus:ring-stone-800">
+              className="underline text-stone-800 dark:text-stone-200 shrink-0 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
               voltar
             </button>
           </div>
         )}
 
-        <div className="flex gap-6 border-b border-stone-300 mb-5">
+        <div className="flex gap-6 border-b border-stone-300 dark:border-stone-700 mb-5">
           {[["mes", "o mês"], ["projecao", "projeção"], ["historico", "histórico"]].map(([k, r]) => (
             <button key={k} onClick={() => { setAba(k); setOffset(0); }}
-              className={`pb-2 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-stone-800 ${
-                aba === k ? "border-b-2 border-stone-900" : "text-stone-500"}`}>
+              className={`pb-2 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300 ${
+                aba === k ? "border-b-2 border-stone-900 dark:border-stone-100" : "text-stone-500 dark:text-stone-400"}`}>
               {r}
             </button>
           ))}
@@ -413,17 +417,17 @@ function CadernoContas({ session }) {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-stone-100 border-t border-stone-300"
+      <div className="fixed bottom-0 left-0 right-0 bg-stone-100 dark:bg-stone-900 border-t border-stone-300 dark:border-stone-700"
            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="max-w-lg mx-auto px-5 py-3 flex gap-3">
           <button onClick={() => setForm({ tipo: "fixo", nome: "", valor: "", paga: 1, total: 3 })}
-            className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800">
+            className="flex-1 bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800 dark:focus:ring-stone-300">
             lançar conta
           </button>
           <button onClick={() => setConfirmarFechar(true)}
             disabled={offset !== 0}
             title={offset !== 0 ? "só dá pra fechar o mês atual" : undefined}
-            className="px-4 border border-stone-400 text-sm disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">
+            className="px-4 border border-stone-400 dark:border-stone-600 text-sm disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
             fechar mês
           </button>
         </div>

@@ -10,6 +10,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Caderno" />
     <meta name="theme-color" content="#f5f5f4" />
+    <script>
+      try {
+        var tema = localStorage.getItem("tema");
+        var escuro = tema ? tema === "escuro" : matchMedia("(prefers-color-scheme: dark)").matches;
+        if (escuro) document.documentElement.classList.add("dark");
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
