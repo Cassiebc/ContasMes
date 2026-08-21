@@ -5,6 +5,7 @@ import { MESES, novoCaderno, ativoEm, faltam, rotuloMes, fecharMes } from "./lib
 import AbaMes from "./components/AbaMes.jsx";
 import AbaProjecao from "./components/AbaProjecao.jsx";
 import AbaHistorico from "./components/AbaHistorico.jsx";
+import AbaMesHistorico from "./components/AbaMesHistorico.jsx";
 import ModalFecharMes from "./components/ModalFecharMes.jsx";
 import FormConta from "./components/FormConta.jsx";
 
@@ -47,6 +48,7 @@ function CadernoContas({ session }) {
   const [form, setForm] = useState(null);
   const [confirmarFechar, setConfirmarFechar] = useState(false);
   const [historico, setHistorico] = useState([]);
+  const [historicoSelecionado, setHistoricoSelecionado] = useState(null);
   const [online, setOnline] = useState(() => navigator.onLine);
 
   useEffect(() => {
@@ -249,7 +251,9 @@ function CadernoContas({ session }) {
     e.target.value = "";
   };
 
-  const m = rotuloMes(mesBase, anoBase, offset);
+  const m = historicoSelecionado
+    ? { nome: MESES[historicoSelecionado.mesBase], ano: historicoSelecionado.anoBase }
+    : rotuloMes(mesBase, anoBase, offset);
 
   return (
     <div className="min-h-screen bg-stone-100 text-stone-900 pb-28"
@@ -274,14 +278,16 @@ function CadernoContas({ session }) {
             <h1 className="text-3xl lowercase" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
               {m.nome} <span className="text-stone-400">{m.ano}</span>
             </h1>
-            <div className="flex gap-1">
-              <button onClick={() => setOffset(Math.max(0, offset - 1))}
-                      disabled={offset === 0}
-                      className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">←</button>
-              <button onClick={() => setOffset(Math.min(meses.length - 1, offset + 1))}
-                      disabled={offset >= meses.length - 1}
-                      className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">→</button>
-            </div>
+            {!historicoSelecionado && (
+              <div className="flex gap-1">
+                <button onClick={() => setOffset(Math.max(0, offset - 1))}
+                        disabled={offset === 0}
+                        className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">←</button>
+                <button onClick={() => setOffset(Math.min(meses.length - 1, offset + 1))}
+                        disabled={offset >= meses.length - 1}
+                        className="w-9 h-9 border border-stone-300 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800">→</button>
+              </div>
+            )}
           </div>
         </header>
 
@@ -298,9 +304,19 @@ function CadernoContas({ session }) {
           </div>
         )}
 
+        {historicoSelecionado && aba === "mes" && (
+          <div className="mb-4 border-l-2 border-stone-400 bg-stone-200 px-3 py-2 text-sm flex justify-between items-center gap-3">
+            <span className="text-stone-600">Mês fechado — histórico, somente leitura.</span>
+            <button onClick={() => setHistoricoSelecionado(null)}
+              className="underline text-stone-800 shrink-0 focus:outline-none focus:ring-2 focus:ring-stone-800">
+              voltar
+            </button>
+          </div>
+        )}
+
         <div className="flex gap-6 border-b border-stone-300 mb-5">
           {[["mes", "o mês"], ["projecao", "projeção"], ["historico", "histórico"]].map(([k, r]) => (
-            <button key={k} onClick={() => setAba(k)}
+            <button key={k} onClick={() => { setAba(k); setHistoricoSelecionado(null); }}
               className={`pb-2 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-stone-800 ${
                 aba === k ? "border-b-2 border-stone-900" : "text-stone-500"}`}>
               {r}
@@ -309,15 +325,19 @@ function CadernoContas({ session }) {
         </div>
 
         {aba === "mes" && (
-          <AbaMes
-            offset={offset}
-            totalMes={total(offset)}
-            somaFixosMes={somaFixos(offset)}
-            somaParcelasMes={somaParcelas(offset)}
-            itensDoMes={doMes(offset)}
-            onEditar={setForm}
-            onRemover={remover}
-          />
+          historicoSelecionado ? (
+            <AbaMesHistorico entry={historicoSelecionado} />
+          ) : (
+            <AbaMes
+              offset={offset}
+              totalMes={total(offset)}
+              somaFixosMes={somaFixos(offset)}
+              somaParcelasMes={somaParcelas(offset)}
+              itensDoMes={doMes(offset)}
+              onEditar={setForm}
+              onRemover={remover}
+            />
+          )
         )}
 
         {aba === "projecao" && (
@@ -334,20 +354,34 @@ function CadernoContas({ session }) {
           />
         )}
 
-        {aba === "historico" && <AbaHistorico historico={historico} />}
+        {aba === "historico" && (
+          <AbaHistorico
+            historico={historico}
+            onVerMes={(h) => { setHistoricoSelecionado(h); setAba("mes"); }}
+          />
+        )}
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 bg-stone-100 border-t border-stone-300"
            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="max-w-lg mx-auto px-5 py-3 flex gap-3">
-          <button onClick={() => setForm({ tipo: "fixo", nome: "", valor: "", paga: 1, total: 3 })}
-            className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800">
-            lançar conta
-          </button>
-          <button onClick={() => setConfirmarFechar(true)}
-            className="px-4 border border-stone-400 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
-            fechar mês
-          </button>
+          {historicoSelecionado ? (
+            <button onClick={() => setHistoricoSelecionado(null)}
+              className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800">
+              voltar pro mês atual
+            </button>
+          ) : (
+            <>
+              <button onClick={() => setForm({ tipo: "fixo", nome: "", valor: "", paga: 1, total: 3 })}
+                className="flex-1 bg-stone-900 text-stone-50 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800">
+                lançar conta
+              </button>
+              <button onClick={() => setConfirmarFechar(true)}
+                className="px-4 border border-stone-400 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800">
+                fechar mês
+              </button>
+            </>
+          )}
         </div>
       </div>
 
