@@ -1,9 +1,9 @@
 # Caderno de Contas — versão com login
 
-Controle de contas fixas e parceladas, com projeção dos próximos meses.
-Cada pessoa cria sua conta e vê apenas os próprios lançamentos.
-Os dados ficam no servidor, então o mesmo login mostra a mesma lista
-no iPhone e no computador.
+Controle de contas fixas e parceladas, com projeção dos próximos meses e
+histórico dos meses já fechados. Cada pessoa cria sua conta e vê apenas os
+próprios lançamentos. Os dados ficam no servidor, então o mesmo login mostra
+a mesma lista no iPhone e no computador.
 
 ---
 
@@ -23,15 +23,23 @@ Isso cria a tabela `cadernos` e liga o Row Level Security — as quatro polític
 garantem, **no banco**, que ninguém lê nem escreve na linha de outra pessoa.
 Não é uma checagem do frontend que dá para burlar pelo DevTools.
 
+> Se o banco já existe e você só quer aplicar uma coluna nova, rode apenas as
+> linhas `alter table ... add column if not exists` do `schema.sql`. Rodar o
+> arquivo inteiro de novo dá erro nos `create policy`, que não aceitam
+> "se não existir".
+
 ## 3. Pegar as chaves
 
-Menu lateral → **Project Settings** → **API**. Você precisa de dois valores:
+Menu lateral → **Project Settings** → **API Keys**. Você precisa de dois valores:
 
 - **Project URL**
-- **anon public** (a chave longa que começa com `eyJ`)
+- A chave **publishable** (`sb_publishable_...`) — em projetos antigos ela
+  aparece como **anon public** e começa com `eyJ`
 
-A chave `anon` é pública por design — ela sozinha não dá acesso a nada,
-porque o RLS é quem decide. Nunca use a `service_role` aqui.
+Essa chave é pública por design: ela vai embutida no site e qualquer pessoa
+consegue lê-la. Ela sozinha não dá acesso a nada, porque o RLS é quem decide o
+que cada usuário enxerga. **Nunca** use aqui a chave secreta (`sb_secret_...`
+ou `service_role`) — essa ignora o RLS e daria acesso total ao banco.
 
 ## 4. Rodar no computador
 
@@ -48,6 +56,12 @@ npm run dev
 
 Abra http://localhost:5173 e crie sua conta. O caderno começa vazio,
 ancorado no mês corrente — use **lançar conta** para o primeiro item.
+
+Para rodar os testes da regra de negócio (fechar mês, cálculo de parcelas):
+
+```bash
+npm test
+```
 
 ### Confirmação de e-mail
 
@@ -70,11 +84,16 @@ Variables** → adicione `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
 
 Depois rode `vercel --prod` mais uma vez, para que o build enxergue as variáveis.
 
-## 6. Instalar no iPhone
+> Se você trocar de projeto Supabase, atualize também o endereço dele no
+> `connect-src` da política de segurança em `vercel.json`. Senão o app abre,
+> mas nenhuma requisição ao banco passa.
 
-1. Abra a URL da Vercel **no Safari** (Chrome no iOS não oferece a opção)
-2. Botão de compartilhar → role até **Adicionar à Tela de Início**
-3. Confirme
+## 6. Instalar no celular
+
+- **iPhone**: abra a URL **no Safari** (Chrome no iOS não oferece a opção) →
+  botão de compartilhar → **Adicionar à Tela de Início**
+- **Android**: o Chrome mostra o prompt de instalação, ou menu ⋮ →
+  **Instalar app**
 
 Vira ícone na tela inicial e abre em tela cheia. A sessão fica salva —
 você não precisa logar de novo toda vez.
@@ -83,6 +102,50 @@ você não precisa logar de novo toda vez.
 
 Ele abre a mesma URL, toca em **não tenho conta ainda** e cria a dele.
 Pronto: mesma aplicação, listas completamente separadas.
+
+---
+
+## Como usar
+
+### As três abas
+
+- **o mês** — os lançamentos do mês que você está vendo, com o total
+- **projeção** — quanto cada um dos próximos meses vai custar, e o backup
+  (baixar JSON/CSV, restaurar)
+- **histórico** — os meses já fechados; tocar em um leva você até ele
+
+### Navegar entre os meses
+
+As setas ← → no topo percorrem a linha do tempo inteira: meses já fechados,
+o mês atual e os meses à frente. Você pode lançar, editar e apagar contas em
+**qualquer** um deles.
+
+O detalhe que faz isso ser seguro: o que você mexe num mês passado ou futuro
+fica **só naquele mês**. Não recalcula nem bagunça os outros.
+
+### Fechar mês
+
+Avança o caderno para o mês seguinte: cada parcela conta como mais uma paga, e
+as que terminaram somem. O mês que você fechou vai para o histórico, inteiro,
+do jeito que estava.
+
+Só dá para fechar o mês atual — nos outros o botão fica apagado.
+
+Se você já tinha planejado o mês seguinte (lançou algo nele antes de chegar
+lá), fechar o mês simplesmente adota esse planejamento em vez de recalcular.
+
+### Abrir mês
+
+Fechou um mês por engano, ou quer voltar a trabalhar num mês anterior? Navegue
+até ele e toque em **abrir mês**: ele volta a ser o mês atual.
+
+Os meses que ficavam depois dele não são perdidos — viram "meses futuros
+planejados", continuam lá e continuam editáveis. É só uma reordenação.
+
+### Tema claro/escuro
+
+O link **escuro**/**claro** no topo alterna. A escolha fica salva no aparelho;
+sem escolha, ele segue o tema do sistema.
 
 ---
 
@@ -96,16 +159,30 @@ Pronto: mesma aplicação, listas completamente separadas.
 ## Sobre o mês inicial
 
 Cada usuário começa com um caderno vazio, no mês em que criou a conta —
-lido do relógio do próprio aparelho, na função `novoCaderno()` em `src/App.jsx`.
+lido do relógio do próprio aparelho, na função `novoCaderno()` em
+`src/lib/caderno.js`.
 
-Depois disso o mês só avança pelo botão **fechar mês**. O app não vira de mês
-sozinho quando o calendário muda: virar de mês significa dar mais uma parcela
-como paga em tudo, e essa é uma decisão sua, não do relógio. Se você abrir em
-dezembro e o cabeçalho ainda disser outubro, é porque faltou fechar dois meses.
+Depois disso o mês só muda pelos botões **fechar mês** e **abrir mês**. O app
+não vira de mês sozinho quando o calendário muda: virar de mês significa dar
+mais uma parcela como paga em tudo, e essa é uma decisão sua, não do relógio.
+Se você abrir em dezembro e o cabeçalho ainda disser outubro, é porque faltou
+fechar dois meses.
 
 ## Sobre o modo offline
 
 O service worker mantém a interface funcionando sem internet, mas os dados
-agora vêm do servidor. Sem conexão, você consegue abrir o app e ver a última
-tela carregada, mas não consegue salvar. É o preço de ter os dados sincronizados
-entre aparelhos.
+vêm do servidor. Sem conexão, você consegue abrir o app e ver a última
+tela carregada, mas não consegue salvar — e um aviso aparece avisando disso.
+É o preço de ter os dados sincronizados entre aparelhos.
+
+## Segurança
+
+O isolamento entre usuários é feito pelo Row Level Security do Postgres, no
+banco — não por checagem no navegador. Auditado: tentar ler ou escrever na
+linha de outra pessoa retorna vazio ou erro 403, mesmo com a chave pública em
+mãos.
+
+O `vercel.json` também define cabeçalhos de segurança (CSP, proteção contra
+clickjacking, entre outros). Se você mexer no script de tema dentro do
+`index.html`, precisa recalcular o hash dele na CSP — há um comentário no
+próprio arquivo lembrando disso.

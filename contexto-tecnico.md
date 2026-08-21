@@ -5,10 +5,12 @@ Documento de contexto para retomar o projeto em novas sessões.
 
 ## O que é
 
-App de controle de contas fixas e parceladas, com projeção dos próximos meses.
-Multiusuário: cada pessoa cria a própria conta e vê apenas os próprios
-lançamentos. Dados no servidor, então o mesmo login mostra a mesma lista no
-celular e no computador.
+App de controle de contas fixas e parceladas, com projeção dos próximos meses
+e histórico dos meses já fechados. Multiusuário: cada pessoa cria a própria
+conta e vê apenas os próprios lançamentos. Dados no servidor, então o mesmo
+login mostra a mesma lista no celular e no computador.
+
+Em produção: <https://caderno-auth.vercel.app>
 
 ## Onde fica
 
@@ -17,73 +19,175 @@ O repositório Git é a fonte de verdade — não a pasta local, já que o proje
 sessão, clonar/atualizar o repositório e trabalhar a partir dele, em vez de
 assumir um caminho fixo.
 
-Já existe uma pasta `.vercel` no repositório — o projeto foi publicado na Vercel.
+Fluxo de trabalho: commits vão para `dev`, são testados, e só então `dev` é
+mesclada em `main`. Nem o merge nem o push publicam nada — o deploy é sempre
+manual (`vercel --prod`).
 
 ## Stack
 
 - React 18.3 + Vite 6
-- Tailwind CSS 4 (via `@tailwindcss/vite`)
+- Tailwind CSS 4 (via `@tailwindcss/vite`, sem arquivo de config — é CSS-first)
 - `@supabase/supabase-js` 2.47 — auth (e-mail/senha) e persistência
+- Vitest 3 para os testes unitários (`npm test`)
 - Deploy: Vercel
 - PWA: manifest + service worker, instalável no iPhone e no Android
 
 ## Estrutura de arquivos
 
 ```
-index.html          meta tags PWA, link do manifest, apple-touch-icon
-vercel.json         rewrite de todas as rotas para /index.html (SPA)
+index.html          meta tags PWA + script inline que aplica o tema
+vercel.json         rewrite SPA + cabeçalhos de segurança (CSP etc.)
 vite.config.js
-schema.sql          script único para rodar no SQL Editor do Supabase
-.env / .env.example VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY
+schema.sql          script para rodar no SQL Editor do Supabase
+.env.example        modelo das variáveis (o .env real não é versionado)
 src/
-  main.jsx          entrypoint
-  App.jsx           (~19 KB) o app inteiro: lançamentos, projeção, fechar mês
-  Login.jsx         tela de login / criar conta
+  main.jsx          entrypoint, registra o service worker
+  App.jsx           estado, efeitos e handlers; orquestra os componentes
+  Login.jsx         tela de login / criar conta, com erros traduzidos
   supabase.js       cria o client a partir das env vars
-  index.css
+  index.css         @custom-variant dark + reset mínimo
+  lib/
+    caderno.js      helpers puros (MESES, brl, ativoEm, rotuloMes, fecharMes)
+    caderno.test.js 15 testes da regra de negócio
+    tema.js         hook useTema (claro/escuro + persistência)
+  components/
+    AbaMes.jsx          o mês atual (ou projeção calculada)
+    AbaMesHistorico.jsx um mês concreto de historico/futuro
+    AbaProjecao.jsx     lista de meses + backup (JSON/CSV)
+    AbaHistorico.jsx    lista dos meses fechados
+    CardTotal.jsx       o quadro do total (compartilhado)
+    Secao.jsx           lista de itens; aceita readOnly
+    FormConta.jsx       modal de lançar/editar
+    ModalFecharMes.jsx  confirmação de fechar
+    ModalAbrirMes.jsx   confirmação de abrir
+    BotaoTema.jsx       alterna claro/escuro
 public/
-  manifest.json     display standalone, portrait, theme #f5f5f4
+  manifest.json     standalone, portrait, ícones normais + maskable, screenshots
   sw.js             service worker, cache "caderno-v1", network-first
-  icon-180.png / icon-192.png / icon-512.png
+  icon-*.png        180/192/512 + variantes -maskable
+  screenshot-*.png  usadas no prompt de instalação do Android
 ```
 
 ## Banco (Supabase)
 
-Uma única tabela:
+Uma única tabela, uma linha por usuário:
 
 ```sql
 create table public.cadernos (
-  user_id    uuid primary key references auth.users(id) on delete cascade,
-  dados      jsonb not null,
-  updated_at timestamptz not null default now()
+  user_id        uuid primary key references auth.users(id) on delete cascade,
+  dados          jsonb not null,          -- o mês ATUAL
+  historico      jsonb not null default '[]',  -- meses já fechados
+  futuro         jsonb not null default '[]',  -- meses planejados à frente
+  dados_anterior jsonb,                   -- legado, ver abaixo
+  updated_at     timestamptz not null default now()
 );
 ```
 
 RLS ligado, com 4 políticas (select / insert / update / delete), todas
 `auth.uid() = user_id`. O isolamento entre usuários é garantido **no banco**,
-não no frontend. O caderno inteiro de um usuário é um blob jsonb na coluna
-`dados` — uma linha por pessoa.
+não no frontend — auditado em 2026-08-21 (leitura e escrita cross-user
+retornam vazio/403).
 
-Usa a chave `anon` (pública por design; o RLS é quem protege). Nunca a
-`service_role`.
+Usa a chave **publishable** (`sb_publishable_...`, o formato novo do que era
+`anon`): pública por design, vai embutida no bundle, e o RLS é quem protege.
+Nunca a `secret`/`service_role`.
+
+`dados_anterior` é resquício de uma versão em que só se guardava um snapshot
+para "desfazer". O app migra esse valor para dentro de `historico` no primeiro
+carregamento; a coluna ficou na tabela só para não descartar dados de quem
+ainda não abriu o app desde então.
+
+### Formato dos registros
+
+`dados`, e cada item de `historico` e `futuro`, têm a mesma forma:
+
+```js
+{ mesBase: 0..11, anoBase: 2026, itens: [...], fechadoEm?: ISOString }
+```
+
+E cada item:
+
+```js
+{ id, nome, valor, tipo: "fixo" }
+{ id, nome, valor, tipo: "parcelado", paga, total }
+```
 
 ## Regras de negócio
 
 - **Fixos**: entram todo mês, sem data de fim.
 - **Parcelado**: informa-se "já paguei X de Y". A parcela X é a do mês atual,
   então faltam `Y - X` meses depois deste.
-- **Fechar mês**: avança todas as parcelas em 1 e remove as que chegaram ao fim.
-- O mês **nunca vira sozinho** quando o calendário muda. Só pelo botão
-  "fechar mês" — porque virar de mês significa dar mais uma parcela como paga
-  em tudo, e isso é decisão do usuário, não do relógio.
+- O mês **nunca vira sozinho** quando o calendário muda. Só pelos botões
+  "fechar mês"/"abrir mês" — porque virar de mês significa dar mais uma
+  parcela como paga em tudo, e isso é decisão do usuário, não do relógio.
 - Cada usuário começa com caderno vazio, ancorado no mês em que criou a conta
-  (lido do relógio do aparelho, em `novoCaderno()` dentro de `src/App.jsx`).
+  (lido do relógio do aparelho, em `novoCaderno()` dentro de `lib/caderno.js`).
+
+### A linha do tempo (o conceito central)
+
+Tudo gira em torno de um `offset` em `App.jsx`, relativo ao mês atual:
+
+| offset | de onde vem | editável? |
+| --- | --- | --- |
+| `< 0` | `historico[offset + historico.length]` | sim, isolado naquele mês |
+| `0` | `dados` — o mês atual de verdade | sim |
+| `1..futuro.length` | `futuro[offset - 1]` | sim, isolado naquele mês |
+| `> futuro.length` | calculado por `ativoEm()` a partir do último mês concreto | sim, mas grava no mês atual |
+
+As mesmas setas ← → percorrem a linha inteira. Lançar/editar/remover num mês
+de `historico` ou `futuro` grava **só naquele registro** (`salvarHistorico` /
+`salvarFuturo`), sem tocar no mês atual nem nos meses entre eles.
+
+**Fechar mês** (só habilitado em offset 0): empilha o mês atual no fim de
+`historico` e avança. Se existir `futuro`, adota o primeiro item dele como
+novo mês atual, preservando o que já foi planejado ali; se não existir,
+aplica `fecharMes()` — avança cada parcela em 1 e remove as que acabaram.
+
+**Abrir mês** (em qualquer mês de `historico`/`futuro`): torna aquele mês o
+atual. Tudo que ficava depois dele — incluindo o mês atual antigo — é
+reordenado para `futuro`. Nada é descartado, só muda de lista.
+
+## Tema claro/escuro
+
+`lib/tema.js` lê a preferência salva em `localStorage` (ou a do sistema),
+alterna a classe `dark` no `<html>` e atualiza o `theme-color` do PWA.
+
+Dois detalhes que quebram fácil se mexerem sem saber:
+
+1. Tailwind 4 aqui não tem arquivo de config, então a variante `dark` por
+   classe precisa ser declarada à mão em `index.css`
+   (`@custom-variant dark (&:where(.dark, .dark *))`).
+2. O `index.html` tem um script inline que aplica a classe antes do primeiro
+   paint (senão a tela pisca branca antes de escurecer). Esse script é
+   liberado na CSP **por hash** — mexer nele sem recalcular o hash em
+   `vercel.json` faz o navegador bloqueá-lo silenciosamente.
+
+## Segurança
+
+Auditado em 2026-08-21 contra o app em produção:
+
+- RLS bloqueia leitura e escrita entre usuários (`[]` e HTTP 403); nenhuma
+  outra tabela exposta; schema não vaza.
+- A chave no bundle é a publishable, não a secreta.
+- Sem sinks de XSS no código (React escapa por padrão; nenhum
+  `dangerouslySetInnerHTML`).
+- `vercel.json` manda CSP, `X-Frame-Options`, `X-Content-Type-Options`,
+  `Referrer-Policy` e `Permissions-Policy`. A CSP restringe `connect-src` ao
+  host do Supabase e usa hash no script inline em vez de `unsafe-inline`.
+  `style-src` precisa de `'unsafe-inline'` porque o React aplica os
+  `style={{...}}` como atributo.
+
+Pendências conhecidas (decisão do usuário, não bugs):
+
+- Cadastro público está aberto — qualquer um com a URL cria conta e consome a
+  cota gratuita.
+- Senha mínima do Supabase é 6 caracteres no servidor (o formulário exige 8).
 
 ## Offline
 
 O service worker mantém a **interface** funcionando sem internet, mas os dados
-vêm do servidor. Sem conexão dá para abrir o app e ver a última tela carregada,
-mas não dá para salvar.
+vêm do servidor. Sem conexão dá para abrir o app e ver a última tela
+carregada, mas não dá para salvar — e um aviso aparece dizendo isso.
 
 ## Deploy
 
@@ -92,19 +196,14 @@ mas não dá para salvar.
 Settings → Environment Variables no painel da Vercel, e o build precisa rodar
 **depois** de cadastradas.
 
+Ao mudar de projeto Supabase, lembre de atualizar o host no `connect-src` da
+CSP em `vercel.json` — senão o app carrega mas nenhuma requisição passa.
+
 ## Instalação no celular
 
 - **iPhone**: abrir a URL no Safari (Chrome no iOS não oferece a opção) →
   compartilhar → "Adicionar à Tela de Início".
 - **Android**: Chrome mostra prompt de instalação ou menu ⋮ → "Instalar app".
-  Funciona com o manifest atual.
-
-## Melhorias identificadas (não aplicadas ainda)
-
-- Ícones do manifest sem `"purpose": "maskable"` — no Android o ícone aparece
-  encaixado dentro de um fundo branco em vez de preencher a forma do sistema.
-- Sem `sizes` de ícone acima de 512 e sem screenshots no manifest (afeta a
-  qualidade do prompt de instalação no Android).
 
 ## Observação sobre continuidade
 
