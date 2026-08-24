@@ -39,6 +39,21 @@ export const rotuloMes = (base, ano, offset) => {
 export const semPlanejamentoVazio = (futuro) =>
   (Array.isArray(futuro) ? futuro : []).filter((m) => m?.itens?.length > 0);
 
+const mesValido = (m) =>
+  m && Number.isInteger(m.mesBase) && Number.isInteger(m.anoBase) && Array.isArray(m.itens);
+
+// Porta de entrada única do estado do caderno: toda gravação passa por aqui,
+// então não importa por qual caminho a alteração veio (lançar, fechar, abrir,
+// apagar, restaurar) — o que vai pro banco obedece as mesmas regras.
+//
+// Antes cada operação cuidava disso por conta própria, e bastava esquecer de
+// uma pra reaparecer um mês planejado vazio zerando a projeção.
+export const normalizarCaderno = ({ dados, historico, futuro }) => ({
+  dados: mesValido(dados) ? dados : novoCaderno(),
+  historico: (Array.isArray(historico) ? historico : []).filter(mesValido),
+  futuro: semPlanejamentoVazio(futuro).filter(mesValido),
+});
+
 // Avança todas as parcelas em 1, remove as que chegaram ao fim e vira o mês base.
 export const fecharMes = ({ itens, mesBase, anoBase }) => {
   const novosItens = itens

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
-import { MESES, novoCaderno, ativoEm, faltam, rotuloMes, fecharMes, semPlanejamentoVazio } from "./lib/caderno";
+import { MESES, novoCaderno, ativoEm, faltam, rotuloMes, fecharMes, normalizarCaderno } from "./lib/caderno";
 import { useTema } from "./lib/tema.js";
 import AbaMes from "./components/AbaMes.jsx";
 import AbaProjecao from "./components/AbaProjecao.jsx";
@@ -83,24 +83,26 @@ function CadernoContas({ session, tema, onAlternarTema }) {
         setErro("Não deu para carregar seus dados. Verifique a conexão.");
         setDados(null);
       } else if (data) {
-        setDados(data.dados);
         // Migra o snapshot único do formato antigo (dados_anterior) pra
         // dentro do histórico, se ainda não tiver sido migrado.
         const hist = Array.isArray(data.historico) ? data.historico : [];
-        setHistorico(
-          hist.length === 0 && data.dados_anterior
-            ? [{ ...data.dados_anterior, fechadoEm: null }]
-            : hist
-        );
-        // Limpa planejamentos vazios que tenham sobrado de versões
-        // anteriores, e grava a limpeza pra não repetir a cada abertura.
-        const futuroBruto = Array.isArray(data.futuro) ? data.futuro : [];
-        const futuroLimpo = semPlanejamentoVazio(futuroBruto);
-        setFuturo(futuroLimpo);
-        if (futuroLimpo.length !== futuroBruto.length) {
+        const limpo = normalizarCaderno({
+          dados: data.dados,
+          historico:
+            hist.length === 0 && data.dados_anterior
+              ? [{ ...data.dados_anterior, fechadoEm: null }]
+              : hist,
+          futuro: data.futuro,
+        });
+        setDados(limpo.dados);
+        setHistorico(limpo.historico);
+        setFuturo(limpo.futuro);
+        // Se o que estava gravado destoava das regras, corrige no banco
+        // agora — senão a limpeza teria de acontecer a cada abertura.
+        if (JSON.stringify(limpo.futuro) !== JSON.stringify(data.futuro ?? [])) {
           supabase
             .from("cadernos")
-            .update({ futuro: futuroLimpo })
+            .update({ futuro: limpo.futuro })
             .eq("user_id", session.user.id)
             .then(() => {});
         }
@@ -121,63 +123,42 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     return () => clearTimeout(t);
   }, [salvo]);
 
-  // `extra` permite incluir outras colunas no mesmo upsert (ex.: historico),
-  // sem afetá-las quando omitido — o upsert só sobrescreve as colunas enviadas.
-  const salvar = async (novo, extra = {}) => {
-    const anterior = dados;
-    setDados(novo);
-    setSalvando(true);
-    setSalvo(false);
-    const { error } = await supabase
-      .from("cadernos")
-      .upsert({ user_id: session.user.id, dados: novo, updated_at: new Date().toISOString(), ...extra });
-    setSalvando(false);
-    if (error) {
-      setDados(anterior);
-      setErro("Não deu para salvar. A alteração foi desfeita — tente de novo.");
-      return false;
-    }
-    setErro(null);
-    setSalvo(true);
-    return true;
-  };
+  // Única porta de escrita do caderno. Recebe o que muda (mês atual,
+  // histórico e/ou futuro), passa o conjunto por normalizarCaderno e grava as
+  // três colunas juntas.
+  //
+  // Existiam três funções de gravação, cada uma cuidando de uma coluna e
+  // lembrando por conta própria das regras de consistência — bastava um
+  // caminho esquecer (apagar o último item de um mês planejado, por exemplo)
+  // pra sobrar um registro vazio bagunçando a projeção. Com uma porta só, a
+  // regra vale pra toda alteração, tenha vindo de onde tiver vindo.
+  const gravar = async (mudanca) => {
+    const anterior = { dados, historico, futuro };
+    const novo = normalizarCaderno({
+      dados: mudanca.dados ?? dados,
+      historico: mudanca.historico ?? historico,
+      futuro: mudanca.futuro ?? futuro,
+    });
 
-  // Edita só a coluna historico, sem tocar em dados (o mês atual). Usado
-  // pra lançar/editar/remover itens de um mês já fechado, sem afetar nada
-  // dos meses entre ele e o atual.
-  const salvarHistorico = async (novoHistorico) => {
-    const anterior = historico;
-    setHistorico(novoHistorico);
+    setDados(novo.dados);
+    setHistorico(novo.historico);
+    setFuturo(novo.futuro);
     setSalvando(true);
     setSalvo(false);
-    const { error } = await supabase
-      .from("cadernos")
-      .update({ historico: novoHistorico, updated_at: new Date().toISOString() })
-      .eq("user_id", session.user.id);
-    setSalvando(false);
-    if (error) {
-      setHistorico(anterior);
-      setErro("Não deu para salvar. A alteração foi desfeita — tente de novo.");
-      return false;
-    }
-    setErro(null);
-    setSalvo(true);
-    return true;
-  };
 
-  // Espelho de salvarHistorico pra coluna futuro.
-  const salvarFuturo = async (novoFuturo) => {
-    const anterior = futuro;
-    setFuturo(novoFuturo);
-    setSalvando(true);
-    setSalvo(false);
-    const { error } = await supabase
-      .from("cadernos")
-      .update({ futuro: novoFuturo, updated_at: new Date().toISOString() })
-      .eq("user_id", session.user.id);
+    const { error } = await supabase.from("cadernos").upsert({
+      user_id: session.user.id,
+      dados: novo.dados,
+      historico: novo.historico,
+      futuro: novo.futuro,
+      updated_at: new Date().toISOString(),
+    });
+
     setSalvando(false);
     if (error) {
-      setFuturo(anterior);
+      setDados(anterior.dados);
+      setHistorico(anterior.historico);
+      setFuturo(anterior.futuro);
       setErro("Não deu para salvar. A alteração foi desfeita — tente de novo.");
       return false;
     }
@@ -211,12 +192,19 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   //   offset === 0                   → dados (o mês atual, editável de verdade)
   //   0 < offset <= futuro.length    → futuro (mês planejado, congelado)
   //   offset > futuro.length         → projeção calculada (sem registro próprio)
-  const emHistorico = offset < 0;
-  const idxHistorico = emHistorico ? offset + historico.length : null;
+  //
+  // Uma gravação que reorganiza a linha do tempo (abrir mês, fechar mês,
+  // apagar) troca as listas antes do offset ser reposicionado, e por um
+  // instante ele aponta pra um mês que deixou de existir. Prender o offset ao
+  // que existe agora evita a tela quebrar nesse meio-tempo.
+  const pos = Math.max(offset, -historico.length);
+
+  const emHistorico = pos < 0;
+  const idxHistorico = emHistorico ? pos + historico.length : null;
   const entryHistorico = emHistorico ? historico[idxHistorico] : null;
 
-  const emFuturo = offset > 0 && offset <= futuro.length;
-  const idxFuturo = emFuturo ? offset - 1 : null;
+  const emFuturo = pos > 0 && pos <= futuro.length;
+  const idxFuturo = emFuturo ? pos - 1 : null;
   const entryFuturo = emFuturo ? futuro[idxFuturo] : null;
 
   // Registro concreto pra um offset >= 0 (dados ou uma entrada de futuro),
@@ -261,20 +249,24 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     (_, i) => i
   );
 
-  const remover = (id) => salvar({ ...dados, itens: itens.filter((i) => i.id !== id) });
+  const remover = (id) => gravar({ dados: { ...dados, itens: itens.filter((i) => i.id !== id) } });
 
-  const removerHistorico = (idx, id) => {
-    const novoHistorico = historico.map((h, i) =>
-      i === idx ? { ...h, itens: h.itens.filter((it) => it.id !== id) } : h
-    );
-    salvarHistorico(novoHistorico);
-  };
+  const removerHistorico = (idx, id) =>
+    gravar({
+      historico: historico.map((h, i) =>
+        i === idx ? { ...h, itens: h.itens.filter((it) => it.id !== id) } : h
+      ),
+    });
 
-  const removerFuturo = (idx, id) => {
+  // Tirar o último item de um mês planejado deixa ele sem lançamento nenhum;
+  // normalizarCaderno some com o registro, e o offset volta pro mês atual
+  // pra não apontar pra um mês que deixou de existir.
+  const removerFuturo = async (idx, id) => {
     const novoFuturo = futuro.map((f, i) =>
       i === idx ? { ...f, itens: f.itens.filter((it) => it.id !== id) } : f
     );
-    salvarFuturo(novoFuturo);
+    const ok = await gravar({ futuro: novoFuturo });
+    if (ok && novoFuturo[idx]?.itens.length === 0) setOffset(0);
   };
 
   // Apaga um mês inteiro da linha do tempo — um mês fechado do histórico ou
@@ -283,10 +275,9 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const apagarMes = async () => {
     const { idx, lista } = confirmarApagar;
     if (lista === "historico") {
-      await salvarHistorico(historico.filter((_, i) => i !== idx));
+      await gravar({ historico: historico.filter((_, i) => i !== idx) });
     } else {
-      const novoFuturo = futuro.filter((_, i) => i !== idx);
-      const ok = await salvarFuturo(novoFuturo);
+      const ok = await gravar({ futuro: futuro.filter((_, i) => i !== idx) });
       // Se o mês descartado é o que está na tela, volta pro mês atual pra
       // não ficar apontando pra um offset que não existe mais.
       if (ok) setOffset(0);
@@ -312,28 +303,30 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     };
 
     if (emHistorico) {
-      const novoHistorico = historico.map((h, i) => {
-        if (i !== idxHistorico) return h;
-        const lista = form.id
-          ? h.itens.map((it) => (it.id === form.id ? novo : it))
-          : [...h.itens, novo];
-        return { ...h, itens: lista };
+      gravar({
+        historico: historico.map((h, i) => {
+          if (i !== idxHistorico) return h;
+          const lista = form.id
+            ? h.itens.map((it) => (it.id === form.id ? novo : it))
+            : [...h.itens, novo];
+          return { ...h, itens: lista };
+        }),
       });
-      salvarHistorico(novoHistorico);
     } else if (emFuturo) {
-      const novoFuturo = futuro.map((f, i) => {
-        if (i !== idxFuturo) return f;
-        const lista = form.id
-          ? f.itens.map((it) => (it.id === form.id ? novo : it))
-          : [...f.itens, novo];
-        return { ...f, itens: lista };
+      gravar({
+        futuro: futuro.map((f, i) => {
+          if (i !== idxFuturo) return f;
+          const lista = form.id
+            ? f.itens.map((it) => (it.id === form.id ? novo : it))
+            : [...f.itens, novo];
+          return { ...f, itens: lista };
+        }),
       });
-      salvarFuturo(novoFuturo);
     } else {
       const lista = form.id
         ? itens.map((i) => (i.id === form.id ? novo : i))
         : [...itens, novo];
-      salvar({ ...dados, itens: lista });
+      gravar({ dados: { ...dados, itens: lista } });
     }
     setForm(null);
   };
@@ -344,13 +337,14 @@ function CadernoContas({ session, tema, onAlternarTema }) {
       { mesBase, anoBase, itens, fechadoEm: new Date().toISOString() },
     ];
 
-    let restoFuturo = semPlanejamentoVazio(futuro);
-    const proximo = restoFuturo[0];
+    // Só um planejamento com lançamentos vira o próximo mês; sem ele (ou
+    // sendo vazio, que normalizarCaderno já descartou), o mês avança
+    // normalmente — fixos seguem, parcelas andam uma casa.
+    const proximo = futuro[0];
     const novoAtual = proximo ? proximo : { ...dados, ...fecharMes(dados) };
-    if (proximo) restoFuturo = restoFuturo.slice(1);
+    const restoFuturo = proximo ? futuro.slice(1) : futuro;
 
-    const ok = await salvar(novoAtual, { historico: novoHistorico, futuro: restoFuturo });
-    if (ok) { setHistorico(novoHistorico); setFuturo(restoFuturo); }
+    await gravar({ dados: novoAtual, historico: novoHistorico, futuro: restoFuturo });
     setOffset(0);
     setConfirmarFechar(false);
   };
@@ -371,11 +365,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     } else {
       return;
     }
-    // Mês vazio empurrado pra frente não vira planejamento — é assim que o
-    // registro vazio aparecia e passava a atrapalhar os meses seguintes.
-    novoFuturo = semPlanejamentoVazio(novoFuturo);
-    const ok = await salvar(novoDados, { historico: novoHistorico, futuro: novoFuturo });
-    if (ok) { setHistorico(novoHistorico); setFuturo(novoFuturo); }
+    await gravar({ dados: novoDados, historico: novoHistorico, futuro: novoFuturo });
     setOffset(0);
     setConfirmarAbrir(false);
   };
@@ -448,8 +438,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
           throw new Error("formato desconhecido");
         }
 
-        const ok = await salvar(novoDados, { historico: novoHistorico, futuro: novoFuturo });
-        if (ok) { setHistorico(novoHistorico); setFuturo(novoFuturo); }
+        await gravar({ dados: novoDados, historico: novoHistorico, futuro: novoFuturo });
         setOffset(0);
       } catch {
         setErro("Esse arquivo não é um backup do Caderno. Escolha o .json que você baixou daqui.");
@@ -461,7 +450,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
 
   const m = emHistorico
     ? { nome: MESES[entryHistorico.mesBase], ano: entryHistorico.anoBase }
-    : rotuloEm(offset);
+    : rotuloEm(pos);
 
   const resumos = meses.map((o) => ({
     offset: o,
@@ -499,10 +488,10 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             </h1>
             <div className="flex gap-1">
               <button onClick={() => setOffset(Math.max(-historico.length, offset - 1))}
-                      disabled={offset <= -historico.length}
+                      disabled={pos <= -historico.length}
                       className="w-9 h-9 border border-stone-300 dark:border-stone-700 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">←</button>
               <button onClick={() => setOffset(Math.min(meses.length - 1, offset + 1))}
-                      disabled={offset >= meses.length - 1}
+                      disabled={pos >= meses.length - 1}
                       className="w-9 h-9 border border-stone-300 dark:border-stone-700 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">→</button>
             </div>
           </div>
@@ -570,11 +559,11 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             />
           ) : (
             <AbaMes
-              offset={offset}
-              totalMes={totalEm(offset)}
-              somaFixosMes={fixosEm(offset)}
-              somaParcelasMes={parceladoEm(offset)}
-              itensDoMes={itensEm(offset)}
+              offset={pos}
+              totalMes={totalEm(pos)}
+              somaFixosMes={fixosEm(pos)}
+              somaParcelasMes={parceladoEm(pos)}
+              itensDoMes={itensEm(pos)}
               onEditar={setForm}
               onRemover={remover}
             />
@@ -613,8 +602,8 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             </button>
           ) : (
             <button onClick={() => setConfirmarFechar(true)}
-              disabled={offset !== 0}
-              title={offset !== 0 ? "só dá pra fechar o mês atual" : undefined}
+              disabled={pos !== 0}
+              title={pos !== 0 ? "só dá pra fechar o mês atual" : undefined}
               className="px-4 border border-stone-400 dark:border-stone-600 text-sm disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
               fechar mês
             </button>

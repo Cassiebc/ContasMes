@@ -1,5 +1,51 @@
 import { describe, it, expect } from "vitest";
-import { faltam, ativoEm, rotuloMes, fecharMes, semPlanejamentoVazio } from "./caderno";
+import { faltam, ativoEm, rotuloMes, fecharMes, semPlanejamentoVazio, normalizarCaderno } from "./caderno";
+
+describe("normalizarCaderno", () => {
+  const mes = (m, itens = [{ id: "1", nome: "x", valor: 10, tipo: "fixo" }]) =>
+    ({ mesBase: m, anoBase: 2026, itens });
+
+  it("descarta planejamento vazio, venha de onde vier", () => {
+    const r = normalizarCaderno({
+      dados: mes(7),
+      historico: [],
+      futuro: [mes(8, []), mes(9)],
+    });
+    expect(r.futuro.map((m) => m.mesBase)).toEqual([9]);
+  });
+
+  it("não mexe num caderno que já está em ordem", () => {
+    const entrada = { dados: mes(7), historico: [mes(6)], futuro: [mes(8)] };
+    expect(normalizarCaderno(entrada)).toEqual(entrada);
+  });
+
+  it("mantém mês fechado vazio no histórico (é registro legítimo)", () => {
+    const r = normalizarCaderno({ dados: mes(7), historico: [mes(6, [])], futuro: [] });
+    expect(r.historico).toHaveLength(1);
+  });
+
+  it("aguenta colunas nulas ou com lixo", () => {
+    const r = normalizarCaderno({ dados: mes(7), historico: null, futuro: undefined });
+    expect(r.historico).toEqual([]);
+    expect(r.futuro).toEqual([]);
+  });
+
+  it("joga fora registro de mês malformado", () => {
+    const r = normalizarCaderno({
+      dados: mes(7),
+      historico: [{ mesBase: "x", anoBase: 2026, itens: [] }, mes(6)],
+      futuro: [{ semNada: true }],
+    });
+    expect(r.historico.map((m) => m.mesBase)).toEqual([6]);
+    expect(r.futuro).toEqual([]);
+  });
+
+  it("repõe um mês atual válido se vier quebrado", () => {
+    const r = normalizarCaderno({ dados: null, historico: [], futuro: [] });
+    expect(Number.isInteger(r.dados.mesBase)).toBe(true);
+    expect(r.dados.itens).toEqual([]);
+  });
+});
 
 describe("semPlanejamentoVazio", () => {
   const comItens = (mes) => ({ mesBase: mes, anoBase: 2026, itens: [{ id: "1", nome: "x", valor: 10, tipo: "fixo" }] });
