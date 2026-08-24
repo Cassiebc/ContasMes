@@ -210,10 +210,15 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   // Registro concreto pra um offset >= 0 (dados ou uma entrada de futuro),
   // ou null se cair na zona de projeção calculada (sem registro próprio).
   //
-  // A projeção sempre parte do mês atual, nunca do último mês planejado: um
-  // mês planejado vazio significa só que aquele mês não tem lançamentos, e
-  // não pode zerar todos os meses seguintes junto — as contas fixas seguem
-  // existindo e as parcelas seguem a contagem.
+  // A projeção continua de onde a linha do tempo concreta parou — o último
+  // mês planejado, ou o mês atual quando não há planejamento. Partir sempre
+  // do mês atual perderia o que foi lançado nos planejados: uma parcela
+  // criada em setembro não apareceria em outubro. Isso só é seguro porque
+  // planejamento vazio não existe mais (normalizarCaderno descarta), senão um
+  // registro vazio zeraria tudo daí pra frente.
+  const ultimoConcreto = futuro.length > 0 ? futuro[futuro.length - 1] : dados;
+  const distanciaBase = futuro.length;
+
   const registroEm = (o) => {
     if (o === 0) return dados;
     if (o > 0 && o <= futuro.length) return futuro[o - 1];
@@ -222,7 +227,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const itensEm = (o) => {
     const reg = registroEm(o);
     if (reg) return reg.itens;
-    return itens.filter((it) => ativoEm(it, o));
+    return ultimoConcreto.itens.filter((it) => ativoEm(it, o - distanciaBase));
   };
   const fixosEm = (o) => itensEm(o).filter((i) => i.tipo === "fixo").reduce((s, i) => s + i.valor, 0);
   const parceladoEm = (o) => itensEm(o).filter((i) => i.tipo === "parcelado").reduce((s, i) => s + i.valor, 0);
@@ -230,19 +235,20 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const rotuloEm = (o) => {
     const reg = registroEm(o);
     if (reg) return { nome: MESES[reg.mesBase], ano: reg.anoBase };
-    return rotuloMes(mesBase, anoBase, o);
+    return rotuloMes(ultimoConcreto.mesBase, ultimoConcreto.anoBase, o - distanciaBase);
   };
   const encerramEm = (o) => {
     const reg = registroEm(o);
     if (reg) return reg.itens.filter((i) => i.tipo === "parcelado" && i.paga === i.total);
-    return itens.filter(
-      (i) => i.tipo === "parcelado" && ativoEm(i, o) && !ativoEm(i, o + 1)
+    const rel = o - distanciaBase;
+    return ultimoConcreto.itens.filter(
+      (i) => i.tipo === "parcelado" && ativoEm(i, rel) && !ativoEm(i, rel + 1)
     );
   };
 
   const horizonteComputado = Math.max(
     3,
-    ...itens.filter((i) => i.tipo === "parcelado").map((i) => faltam(i))
+    ...ultimoConcreto.itens.filter((i) => i.tipo === "parcelado").map((i) => faltam(i))
   );
   const meses = Array.from(
     { length: Math.min(futuro.length + horizonteComputado + 1, 13) },
@@ -559,7 +565,9 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             />
           ) : (
             <AbaMes
-              offset={pos}
+              // Num mês concreto os itens já trazem a parcela certa (offset 0);
+              // num mês calculado, conta a distância desde o último concreto.
+              offset={registroEm(pos) ? 0 : pos - distanciaBase}
               totalMes={totalEm(pos)}
               somaFixosMes={fixosEm(pos)}
               somaParcelasMes={parceladoEm(pos)}
