@@ -8,3 +8,6 @@ dist
 
 # Planilhas de trabalho: ficam fora do repositorio, sao documento pessoal
 *.xlsx
+
+# Capturas de tela dos testes de ponta a ponta
+e2e/telas/

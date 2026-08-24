@@ -71,6 +71,17 @@ Para rodar os testes da regra de negócio (fechar mês, cálculo de parcelas):
 npm test
 ```
 
+E os testes de ponta a ponta, que dirigem o app de verdade e conferem o banco
+a cada passo:
+
+```bash
+npx playwright install chromium   # uma vez
+npm run e2e
+```
+
+Eles precisam de uma conta de teste — **não use a sua**, porque apagam e
+recriam os meses do usuário. As instruções estão em `e2e/README.md`.
+
 ### Confirmação de e-mail
 
 Por padrão o Supabase exige confirmar o e-mail antes do primeiro login.
@@ -80,17 +91,34 @@ conhecidas, tudo bem desligar.
 
 ## 5. Publicar na Vercel
 
+Na primeira vez:
+
 ```bash
 npm i -g vercel
 vercel login
 vercel --prod
 ```
 
-Aceite os padrões. **Antes de funcionar**, você precisa cadastrar as mesmas
-duas variáveis no painel da Vercel: projeto → **Settings** → **Environment
-Variables** → adicione `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
+Aceite os padrões. **Antes de funcionar**, cadastre as mesmas duas variáveis
+no painel da Vercel: projeto → **Settings** → **Environment Variables** →
+`VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. Depois rode `vercel --prod`
+mais uma vez, para que o build enxergue as variáveis.
 
-Depois rode `vercel --prod` mais uma vez, para que o build enxergue as variáveis.
+### Depois disso, publicar é dar push
+
+Com o projeto ligado ao GitHub, a Vercel publica sozinha:
+
+| você faz | acontece |
+| --- | --- |
+| push em `main` | **publica em produção**, em poucos segundos |
+| push em `dev` | gera um Preview, protegido por login da Vercel |
+
+Ou seja: **"dar push em `main`" e "publicar" são a mesma decisão.** Não existe
+passo de confirmação depois.
+
+O Preview do `dev` fica num endereço fixo, que sempre aponta para o topo da
+branch — dá para testar ali antes de publicar. Só lembre que ele usa **o mesmo
+banco de produção**: Preview não é sandbox.
 
 > Se você trocar de projeto Supabase, atualize também o endereço dele no
 > `connect-src` da política de segurança em `vercel.json`. Senão o app abre,
@@ -98,13 +126,24 @@ Depois rode `vercel --prod` mais uma vez, para que o build enxergue as variávei
 
 ## 6. Instalar no celular
 
+O próprio app oferece: há um botão **instalar na tela inicial** na tela de
+login, e um aviso dispensável na aba "o mês" para quem já entrou. Os dois
+somem sozinhos depois de instalado.
+
+Se preferir o caminho manual:
+
 - **iPhone**: abra a URL **no Safari** (Chrome no iOS não oferece a opção) →
   botão de compartilhar → **Adicionar à Tela de Início**
-- **Android**: o Chrome mostra o prompt de instalação, ou menu ⋮ →
-  **Instalar app**
+- **Android**: menu ⋮ → **Instalar app**
 
 Vira ícone na tela inicial e abre em tela cheia. A sessão fica salva —
 você não precisa logar de novo toda vez.
+
+Duas coisas que confundem e não são defeito: quando sai versão nova, o app
+instalado se atualiza sozinho ao voltar para o primeiro plano — mas pode ser
+preciso fechá-lo de vez uma vez. E **trocar o ícone do app não muda o atalho
+já criado**: o sistema guarda o ícone de quando você instalou, então é preciso
+remover e adicionar o atalho de novo.
 
 ## 7. O segundo usuário
 
@@ -124,9 +163,13 @@ Pronto: mesma aplicação, listas completamente separadas.
 
 ### Navegar entre os meses
 
-As setas ← → no topo percorrem a linha do tempo inteira: meses já fechados,
+As setas ‹ › no topo percorrem a linha do tempo inteira: meses já fechados,
 o mês atual e os meses à frente. Você pode lançar, editar e apagar contas em
 **qualquer** um deles.
+
+Para trás dá para ir mesmo em meses que você nunca registrou — eles abrem
+vazios, prontos para receber o que você pagou. É a saída para quando o mês
+atual ficou adiantado demais: volte até o mês certo e toque em **abrir mês**.
 
 O detalhe que faz isso ser seguro: o que você mexe num mês passado ou futuro
 fica **só naquele mês**. Não recalcula nem bagunça os outros.
@@ -153,8 +196,8 @@ nem apagado: só muda qual mês é considerado o atual.
 
 ### Tema claro/escuro
 
-O link **escuro**/**claro** no topo alterna. A escolha fica salva no aparelho;
-sem escolha, ele segue o tema do sistema.
+O botão de lua no topo alterna. A escolha fica salva no aparelho; sem escolha,
+ele segue o tema do sistema.
 
 ---
 

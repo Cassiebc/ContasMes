@@ -18,7 +18,10 @@ projeto, para a próxima sessão não perder o contexto.
   GitHub e faz o deploy sozinha. Trate "dar push em main" e "publicar" como a
   mesma decisão, e deixe isso explícito ao pedir o aval dela. Push em `dev`
   não publica.
-- Rode `npm test` e `npm run build` antes de propor um commit.
+- Rode `npm test` e `npm run build` antes de propor um commit. Se a mudança
+  toca na linha do tempo, no banco ou na tela, rode também `npm run e2e`.
+- Publicar não termina no push: confira em produção **por conteúdo**, não só
+  pelo hash do bundle, e diga o que foi verificado.
 
 ## Armadilhas conhecidas
 
@@ -75,10 +78,20 @@ Sem a reancoragem, lançar num mês do passado joga a tela para outro mês.
 
 ## Como testar de verdade
 
-`npm test` cobre só as funções puras. O que pegou os bugs desta semana foram
-testes de ponta a ponta com Playwright, dirigindo o app real contra o Supabase
-e conferindo o banco a cada passo — vale reproduzir o fluxo relatado antes de
-supor a causa. Cenários que já quebraram e valem revisitar:
+`npm test` cobre só as funções puras, e **nenhum bug de consistência deste
+projeto foi pego por ele**. O que pegou foi ponta a ponta: Playwright
+dirigindo o app real e conferindo o **banco** a cada passo. A suíte está em
+`e2e/` — leia `e2e/README.md`, que explica as variáveis `E2E_*`.
+
+```bash
+npm run e2e       # fluxo completo, 55 checagens
+npm run e2e:tudo  # os cinco arquivos
+E2E_URL=https://caderno-auth.vercel.app npm run e2e   # contra producao
+```
+
+Reproduza o fluxo relatado antes de supor a causa: várias vezes a suspeita
+inicial estava errada, e o que parecia bug novo era efeito colateral de uma
+correção anterior. Cenários que já quebraram e valem revisitar:
 
 - fechar mês com um planejamento vazio à frente (as contas fixas sumiam);
 - lançar parcela num mês, abrir um mês anterior e conferir a projeção (a
@@ -86,4 +99,14 @@ supor a causa. Cenários que já quebraram e valem revisitar:
 - restaurar backup por cima de um caderno diferente (mês duplicava);
 - apagar o último lançamento de um mês planejado (o mês zerava a projeção);
 - estando num mês adiantado e sem histórico, voltar meses e lançar lá
-  (a seta nascia desabilitada e não havia como corrigir o mês errado).
+  (a seta nascia desabilitada e não havia como corrigir o mês errado);
+- lançar num mês do passado que ainda não existia (a tela pulava para outro
+  mês, porque a linha do tempo se reordenou sob o `offset`);
+- voltar de janeiro para dezembro (o título virava "undefined").
+
+## Ao entregar
+
+Diga o que foi verificado e como, sem enfeitar. Se um teste falhou, mostre a
+saída; se algo ficou de fora, diga o que e por quê. Quando uma suspeita sua
+estiver errada, corrija e siga — este projeto tem histórico de correção que
+virou bug novo, e esconder isso custa caro na sessão seguinte.

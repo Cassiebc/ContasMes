@@ -3,6 +3,10 @@
 Documento de contexto para retomar o projeto em novas sessões.
 Última atualização: 2026-08-24.
 
+Se você é uma sessão nova: leia este arquivo inteiro antes de mexer em
+qualquer coisa. Várias decisões aqui parecem estranhas e são deliberadas —
+desfazer uma delas sem saber o porquê já reintroduziu bug duas vezes.
+
 ## O que é
 
 App de controle de contas fixas e parceladas, com projeção dos próximos meses
@@ -74,6 +78,14 @@ src/
     AlertaIOS.jsx       caixa de confirmação no padrão do iOS
     BotaoTema.jsx       alterna claro/escuro
     Instalar.jsx        convite de instalar: botão no login + aviso no mês
+e2e/                testes de ponta a ponta (Playwright) — veja e2e/README.md
+  ambiente.mjs      le .env e as variaveis E2E_*; falha claro se faltar
+  estado.mjs        fala com o Supabase por HTTP, pra conferir o banco
+  workflow-completo.mjs   o caminho inteiro, 55 checagens
+  voltar-ao-passado.mjs   mes adiantado sem historico
+  esvaziar-mes.mjs        apagar o ultimo lancamento
+  virada-do-ano.mjs       voltar de janeiro pra dezembro
+  instalar.mjs            o convite de instalar o PWA
 public/
   manifest.json     standalone, portrait, ícones normais + maskable, screenshots
   sw.js             service worker, cache "caderno-v1", network-first
@@ -137,6 +149,33 @@ A coluna `lancamentos.origem_id` guarda de qual item antigo veio cada
 lançamento, pra migração poder rodar de novo sem duplicar. Pode sair depois
 que a migração estiver conferida.
 
+### O que `repositorio.js` expõe
+
+`App.jsx` não conhece SQL: tudo passa por aqui. Se precisar de uma operação
+nova no banco, ela nasce neste arquivo, não na tela.
+
+| função | o que faz |
+| --- | --- |
+| `carregar(userId)` | lê tudo e devolve `{ meses, dados, historico, futuro }`. Também **apaga** meses futuros vazios (veja regras de negócio). |
+| `lancar(userId, mes, item)` | insere um lançamento; cria o mês se ele ainda não existir |
+| `editarLancamento(id, item)` | atualiza um lançamento |
+| `removerLancamento(id)` | apaga um lançamento |
+| `apagarMes(mesId)` | apaga o mês e, em cascata, seus lançamentos |
+| `definirAtual(userId, mesId)` | move a marca de `atual` para um mês que já existe |
+| `abrirMesNoBanco(userId, mes)` | idem, mas **cria o mês** se preciso — é o "abrir mês" num mês do passado que nunca foi registrado |
+| `fecharMesNoBanco(...)` | marca `fechado_em` e passa `atual` pro seguinte, criando-o com as parcelas avançadas |
+| `substituirTudo(userId, caderno)` | restaurar backup: troca o caderno inteiro |
+| `migrarDoFormatoAntigo(userId)` | traz os dados da tabela `cadernos` (jsonb) pro modelo novo |
+
+Duas defesas que vale não remover sem entender:
+
+- `migrarDoFormatoAntigo` guarda a promessa em andamento e devolve a mesma
+  para quem chamar durante a migração. Sem isso, duas migrações concorrentes
+  (o efeito roda duas vezes em desenvolvimento, ou duas abas abertas) brigavam
+  pelas mesmas linhas e davam 409.
+- O código de erro `23505` do Postgres (chave duplicada) é tratado como
+  "já está lá", não como falha. É o que torna a migração repetível.
+
 ## Regras de negócio
 
 - **Fixos**: entram todo mês, sem data de fim.
@@ -150,21 +189,26 @@ que a migração estiver conferida.
 
 ### Como a tela lê a linha do tempo
 
-`App.jsx` trabalha com um `offset` relativo ao mês atual:
+`App.jsx` trabalha com um `offset` — **passos** até o mês atual, não meses:
 
 | offset | de onde vem | editável? |
 | --- | --- | --- |
-| `< 0` | `historico[offset + historico.length]` | sim, só naquele mês |
+| `< 0` | o mês do calendário a `offset` meses atrás; se houver registro no histórico, ele; senão, um mês vazio | sim, só naquele mês |
 | `0` | `dados` — o mês atual | sim |
 | `1..futuro.length` | `futuro[offset - 1]` | sim, só naquele mês |
 | `> futuro.length` | calculado por `ativoEm()` a partir do último mês que existe | sim, mas grava no mês atual |
 
+Repare na assimetria, que é deliberada: **para trás o passo é calendário,
+para frente é registro.** O porquê está em "Navegar para trás" mais abaixo.
+
 `historico` e `futuro` não são guardados: `repositorio.carregar()` os deriva
 comparando cada mês com o que está marcado como atual.
 
-As mesmas setas ← → percorrem a linha inteira. Toda alteração vai pro banco e
+As mesmas setas ‹ › percorrem a linha inteira. Toda alteração vai pro banco e
 o caderno é relido — a tela é sempre reflexo do banco, nunca uma cópia que
-foi se afastando dele.
+foi se afastando dele. Depois de reler, `reancorar()` reposiciona o `offset`
+no mês que estava na tela: uma escrita pode reordenar a linha do tempo, e o
+mesmo passo passaria a apontar pra outro mês.
 
 **Fechar mês**: marca `fechado_em` no mês atual e passa `atual` pro seguinte.
 Se o mês seguinte já existe (foi planejado), ele é adotado com o que tiver
@@ -203,8 +247,6 @@ pra quando significa alguma coisa (vermelho em apagar).
 A identidade anterior (serif Georgia, bege de papel, cantos retos) saiu nessa
 troca. Se um dia voltar atrás, o que muda é só o bloco de tokens e as classes
 dos componentes — a lógica não conhece nada disso.
-
-## Tema claro/escuro
 
 ## Tema claro/escuro
 
@@ -341,10 +383,23 @@ conteúdo para o navegador sequer perceber.
 
 ## Deploy
 
-`vercel --prod`. As duas variáveis (`VITE_SUPABASE_URL`,
-`VITE_SUPABASE_ANON_KEY`) precisam estar cadastradas em
-Settings → Environment Variables no painel da Vercel, e o build precisa rodar
-**depois** de cadastradas.
+**O jeito normal é dar push em `main`** — a Vercel está ligada ao GitHub e
+publica sozinha, em poucos segundos. `vercel --prod` continua funcionando pra
+publicar à mão, mas não é necessário.
+
+As duas variáveis (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) precisam
+estar cadastradas em Settings → Environment Variables no painel da Vercel, e o
+build precisa rodar **depois** de cadastradas.
+
+Push em `dev` gera um Preview, protegido por login da Vercel, no endereço fixo
+`https://cadernocontas-git-dev-cassiebcs.vercel.app`. É o mesmo Supabase de
+produção — Preview não é sandbox.
+
+Depois de publicar, vale conferir por conteúdo e não só pelo hash do arquivo:
+
+```bash
+curl -s https://caderno-auth.vercel.app/ | grep -o 'assets/index-[^"]*\.js'
+```
 
 Ao mudar de projeto Supabase, lembre de atualizar o host no `connect-src` da
 CSP em `vercel.json` — senão o app carrega mas nenhuma requisição passa.
@@ -357,14 +412,32 @@ CSP em `vercel.json` — senão o app carrega mas nenhuma requisição passa.
 
 ## Como testar
 
-`npm test` (Vitest) cobre só as funções puras de `lib/caderno.js` — cálculo de
-parcela, virada de mês, rótulo do mês. É rápido e vale rodar sempre, mas
-**nenhum dos bugs de consistência foi pego por ele**.
+Dois níveis, e o segundo é o que importa.
 
-O que pegou foi teste de ponta a ponta: Playwright dirigindo o app real contra
-o Supabase, conferindo o banco a cada passo. Vale reproduzir o fluxo relatado
-antes de supor a causa — várias vezes a suspeita inicial estava errada, e o
-que parecia um bug era efeito colateral de uma correção anterior.
+```bash
+npm test        # Vitest: funcoes puras de lib/caderno.js
+npm run build   # o build tem que passar antes de qualquer commit
+npm run e2e     # Playwright: o fluxo completo, 55 checagens
+npm run e2e:tudo  # os cinco arquivos de e2e/
+```
+
+`npm test` cobre só as funções puras — cálculo de parcela, virada de mês,
+rótulo do mês, `posDoMes`. É rápido e vale rodar sempre, mas **nenhum dos bugs
+de consistência do projeto foi pego por ele**.
+
+O que pegou foi ponta a ponta: Playwright dirigindo o app real contra o
+Supabase e conferindo **o banco** a cada passo, não a tela. A suíte está em
+`e2e/`, com instruções em `e2e/README.md`.
+
+Dois avisos que valem repetir: **os testes e2e apagam e recriam os meses do
+usuário logado** — use conta de teste, nunca a real, porque não existe banco
+de desenvolvimento separado. E vale rodar contra produção depois de publicar
+(`E2E_URL=https://caderno-auth.vercel.app npm run e2e`); foi assim que cada
+release deste projeto foi conferida.
+
+Reproduza o fluxo relatado antes de supor a causa — várias vezes a suspeita
+inicial estava errada, e o que parecia bug novo era efeito colateral de uma
+correção anterior.
 
 Cenários que já quebraram, e por isso valem revisitar ao mexer na linha do
 tempo:
@@ -375,7 +448,52 @@ tempo:
 - restaurar backup por cima de um caderno diferente → o mês duplicava;
 - apagar o último lançamento de um mês planejado → aquele mês zerava;
 - migração rodando duas vezes ao mesmo tempo (o efeito roda duas vezes em
-  desenvolvimento, ou o app está aberto em duas abas).
+  desenvolvimento, ou o app está aberto em duas abas);
+- mês atual adiantado e sem histórico nenhum → a seta de voltar nascia
+  desabilitada, e não havia como corrigir o mês errado;
+- lançar num mês do passado que ainda não existia → a tela pulava pra outro
+  mês, porque a linha do tempo se reordenou sob o `offset`;
+- voltar de janeiro → o título virava "undefined", porque `%` em JavaScript
+  devolve negativo. Só apareceria na virada do ano.
+
+## Manutenção: as coisas que mais aparecem
+
+**Mudar o schema.** O app usa a chave publishable, que não altera estrutura de
+tabela. Todo `alter table` tem que ser rodado pela usuária no SQL Editor do
+Supabase. Entregue o comando pronto e espere ela confirmar **antes** de
+escrever o código que depende da coluna nova.
+
+**Mexer no script de tema do `index.html`.** Ele é liberado na CSP por hash
+sha256. Trocar uma vírgula ali sem recalcular o hash em `vercel.json` faz o
+navegador bloqueá-lo **silenciosamente**: nenhum erro no código, e o app volta
+a piscar branco antes de escurecer. O arquivo tem CRLF e o parser HTML
+normaliza pra LF antes de somar o hash — por isso a CSP lista os dois valores.
+
+**Trocar de projeto Supabase.** Além das variáveis, atualize o host no
+`connect-src` da CSP em `vercel.json`. Senão o app carrega e nenhuma
+requisição passa.
+
+**Mudar o `sw.js`.** O arquivo é byte a byte o mesmo em todo deploy, então o
+navegador nunca o considera novo. Se mudar a estratégia de cache, o conteúdo
+precisa mudar para o navegador sequer perceber.
+
+**Autoria dos commits.** O git das máquinas usadas aqui não tem
+`user.name`/`user.email` configurados e inventa um e-mail corporativo. Passe a
+identidade por variável de ambiente em todo commit:
+
+```
+GIT_AUTHOR_NAME="Bruna Cássia" GIT_AUTHOR_EMAIL="109704012+Cassiebc@users.noreply.github.com" GIT_COMMITTER_NAME="Bruna Cássia" GIT_COMMITTER_EMAIL="109704012+Cassiebc@users.noreply.github.com" git commit -m "..."
+```
+
+**Limpeza que ainda está pendente** (nenhuma é urgente, todas dependem de
+combinar antes):
+
+- a tabela `cadernos` (formato jsonb antigo) segue no banco como rede de
+  segurança da migração;
+- a coluna `lancamentos.origem_id`, que existe só para a migração ser
+  repetível;
+- contas de teste criadas para os e2e — só a usuária remove, pelo painel do
+  Supabase.
 
 ## Observação sobre continuidade
 
