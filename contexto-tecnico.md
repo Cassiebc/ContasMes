@@ -53,7 +53,8 @@ src/
   supabase.js       cria o client a partir das env vars
   index.css         @custom-variant dark + reset mínimo
   lib/
-    caderno.js      helpers puros (MESES, brl, ativoEm, rotuloMes, fecharMes)
+    caderno.js      helpers puros (MESES, brl, ativoEm, rotuloMes, fecharMes,
+                    deslocarMes, distanciaMeses, posDoMes)
     caderno.test.js testes da regra de negócio
     repositorio.js  todo o acesso ao banco; a tela não conhece SQL
     tema.js         hook useTema (claro/escuro + persistência)
@@ -275,6 +276,48 @@ tentar chamar uma API que não existe.
 Detalhe que é fácil errar: `e.preventDefault()` no evento é obrigatório —
 sem ele o Chrome mostra a barra de instalação dele por cima da nossa. E o
 convite **só serve uma vez**; depois de usado tem que ser descartado.
+
+## Navegar para trás: calendário, não registros
+
+A seta de voltar anda pelo **calendário**, não pela lista de meses que
+existem no banco. Um passo atrás é sempre o mês anterior, tenha registro ou
+não; se não tiver, o mês abre vazio e só vira linha no banco se receber
+lançamento — igual ao que já acontecia do lado do futuro.
+
+Antes o passo contava registros (`-historico.length`), e isso criava dois
+becos sem saída:
+
+- quem tinha o mês atual adiantado e **nenhum histórico** não tinha para onde
+  voltar. A seta nascia desabilitada. Como "Abrir mês" só aparece quando você
+  está *em* um mês, a saída que existia para corrigir o mês errado era
+  inalcançável justamente para quem precisava dela;
+- quem tinha histórico **não contíguo** (agosto registrado, setembro e
+  outubro não) pulava de novembro direto para agosto, e os meses do meio
+  ficavam inalcançáveis para sempre.
+
+Três coisas sustentam isso:
+
+**`posDoMes` (em `caderno.js`)** diz em que passo um mês aparece. No passado é
+distância de calendário pura, então a posição de agosto **não muda** quando
+agosto passa a existir.
+
+**A tela reancora pelo mês depois de cada escrita.** `executar()` relê o
+caderno e chama `reancorar()`, que reposiciona o `offset` no mês que estava na
+tela. Sem isso, lançar em agosto reordenava a linha do tempo e o mesmo passo
+passava a apontar para junho — a tela pulava sozinha.
+
+**Nada é projetado para trás.** `itensEm()` devolve `[]` para um mês passado
+sem registro. Projeção é afirmação sobre o que vai acontecer; do passado não
+se infere nada. Se projetasse, as contas fixas de hoje apareceriam num mês que
+a pessoa nunca registrou, e as parcelas viriam com número negativo.
+
+`abrirMesNoBanco()` cria a linha antes de marcar como atual, porque agora dá
+para pedir "abrir mês" em um mês que ainda não existe.
+
+Uma assimetria conhecida ficou de pé: **para frente** o passo ainda conta
+registros planejados. Quem planeja dezembro sem planejar novembro não alcança
+novembro pela seta. Não foi mexido de propósito — essa é a mesma lógica de
+`distanciaBase` que sustenta a projeção e já custou uma rodada de bugs.
 
 ## Atualização depois de um deploy
 

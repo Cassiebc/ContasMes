@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
-import { MESES, ativoEm, faltam, rotuloMes, fecharMes } from "./lib/caderno";
+import { MESES, ativoEm, faltam, rotuloMes, fecharMes, deslocarMes, posDoMes, mesmoMes, distanciaMeses } from "./lib/caderno";
 import * as repo from "./lib/repositorio.js";
 import { useTema } from "./lib/tema.js";
 import AbaMes from "./components/AbaMes.jsx";
@@ -55,6 +55,9 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const [salvo, setSalvo] = useState(false);
   const [aba, setAba] = useState("mes");
   const [offset, setOffset] = useState(0);
+  // Qual mês do calendário está na tela agora — usado pra reancorar a
+  // posição depois de uma escrita que reordena a linha do tempo.
+  const mesVisivelRef = useRef(null);
   const [form, setForm] = useState(null);
   const [confirmarFechar, setConfirmarFechar] = useState(false);
   const [confirmarAbrir, setConfirmarAbrir] = useState(false);
@@ -103,6 +106,15 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     return () => { vivo = false; };
   }, [userId]);
 
+  // Uma escrita pode reordenar a linha do tempo: um mês do passado que passa
+  // a existir empurra os índices, um mês que ficou vazio some. `offset` conta
+  // passos, então o mesmo passo viraria outro mês — foi assim que lançar em
+  // agosto jogava a tela pra junho. Reancora pelo mês, que não muda.
+  const reancorar = (est) => {
+    const alvo = mesVisivelRef.current;
+    if (alvo && est?.dados) setOffset(posDoMes(alvo, est));
+  };
+
   // Toda alteração passa por aqui: executa a escrita e relê o caderno do
   // banco. Antes o estado da tela era atualizado por conta própria e ia
   // separando da verdade a cada operação esquecida; agora o banco é quem
@@ -112,14 +124,18 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     setSalvo(false);
     try {
       await acao();
-      aplicar(await repo.carregar(userId));
+      const novo = await repo.carregar(userId);
+      aplicar(novo);
+      reancorar(novo);
       setErro(null);
       setSalvo(true);
       return true;
     } catch (e) {
       setErro("Não deu para salvar. Tente de novo.");
       try {
-        aplicar(await repo.carregar(userId));
+        const novo = await repo.carregar(userId);
+        aplicar(novo);
+        reancorar(novo);
       } catch {
         // sem conexão: mantém o que está na tela
       }
@@ -150,13 +166,20 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const { itens, mesBase, anoBase } = dados;
 
   // A linha do tempo é a ordem das datas; `offset` é a distância até o mês
-  // atual. Negativo cai no histórico, positivo no planejado, e além do
-  // último mês que existe a projeção é calculada.
-  const pos = Math.max(offset, -historico.length);
-
-  const emHistorico = pos < 0;
-  const idxHistorico = emHistorico ? pos + historico.length : null;
-  const entryHistorico = emHistorico ? historico[idxHistorico] : null;
+  // atual. Negativo cai no passado, positivo no planejado, e além do último
+  // mês que existe a projeção é calculada.
+  //
+  // Pra trás um passo é sempre o mês anterior do calendário, exista registro
+  // ou não. Antes o passo contava registros: quem tinha o mês atual adiantado
+  // e nenhum histórico não tinha para onde voltar, e quem tinha um registro
+  // antigo pulava direto pra ele — os meses do meio ficavam inalcançáveis.
+  //
+  // O limite é um ano antes do mês mais antigo que existe, pra que nenhum
+  // histórico fique fora de alcance e a seta ainda pare em algum lugar.
+  const recuoDoMaisAntigo =
+    historico.length > 0 ? -distanciaMeses(dados, historico[0]) : 0;
+  const limiteAtras = Math.max(12, recuoDoMaisAntigo + 12);
+  const pos = Math.max(offset, -limiteAtras);
 
   const emFuturo = pos > 0 && pos <= futuro.length;
   const idxFuturo = emFuturo ? pos - 1 : null;
@@ -170,24 +193,45 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const registroEm = (o) => {
     if (o === 0) return dados;
     if (o > 0 && o <= futuro.length) return futuro[o - 1];
+    if (o < 0) {
+      const alvo = deslocarMes(dados.mesBase, dados.anoBase, o);
+      return historico.find((mm) => mesmoMes(mm, alvo)) ?? null;
+    }
     return null;
   };
+
+  // No passado o mês pode existir (histórico) ou não (nunca foi registrado).
+  const entryHistorico = pos < 0 ? registroEm(pos) : null;
+  const emHistorico = entryHistorico !== null;
+  const emPassadoVazio = pos < 0 && entryHistorico === null;
+
+  // Projeção fala do que ainda vai acontecer; do passado não se infere nada.
+  // Um mês atrás sem registro é um mês sem informação — abre vazio, não com
+  // as contas de hoje espelhadas pra trás.
   const itensEm = (o) => {
     const reg = registroEm(o);
     if (reg) return reg.itens;
+    if (o < 0) return [];
     return ultimoConcreto.itens.filter((it) => ativoEm(it, o - distanciaBase));
   };
   const fixosEm = (o) => itensEm(o).filter((i) => i.tipo === "fixo").reduce((s, i) => s + i.valor, 0);
   const parceladoEm = (o) => itensEm(o).filter((i) => i.tipo === "parcelado").reduce((s, i) => s + i.valor, 0);
   const totalEm = (o) => fixosEm(o) + parceladoEm(o);
-  const rotuloEm = (o) => {
+  // Que mês do calendário cai nesse passo da linha do tempo.
+  const mesEm = (o) => {
     const reg = registroEm(o);
-    if (reg) return { nome: MESES[reg.mesBase], ano: reg.anoBase };
-    return rotuloMes(ultimoConcreto.mesBase, ultimoConcreto.anoBase, o - distanciaBase);
+    if (reg) return { mesBase: reg.mesBase, anoBase: reg.anoBase };
+    if (o < 0) return deslocarMes(dados.mesBase, dados.anoBase, o);
+    return deslocarMes(ultimoConcreto.mesBase, ultimoConcreto.anoBase, o - distanciaBase);
+  };
+  const rotuloEm = (o) => {
+    const { mesBase: mb, anoBase: ab } = mesEm(o);
+    return { nome: MESES[mb], ano: ab };
   };
   const encerramEm = (o) => {
     const reg = registroEm(o);
     if (reg) return reg.itens.filter((i) => i.tipo === "parcelado" && i.paga === i.total);
+    if (o < 0) return [];
     const rel = o - distanciaBase;
     return ultimoConcreto.itens.filter(
       (i) => i.tipo === "parcelado" && ativoEm(i, rel) && !ativoEm(i, rel + 1)
@@ -205,7 +249,11 @@ function CadernoContas({ session, tema, onAlternarTema }) {
 
   // Em que mês a alteração cai: o que está na tela, quando ele existe de
   // fato; senão o mês atual (a zona de projeção não tem registro próprio).
-  const mesDaTela = () => (emHistorico ? entryHistorico : emFuturo ? entryFuturo : dados);
+  const mesDaTela = () =>
+    emHistorico ? entryHistorico
+    : emFuturo ? entryFuturo
+    : emPassadoVazio ? mesEm(pos)
+    : dados;
 
   const remover = (id) => executar(() => repo.removerLancamento(id));
 
@@ -248,8 +296,8 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   // carrega a marca de atual, e a linha do tempo se reordena pelas datas.
   const abrirMes = async () => {
     const alvo = mesDaTela();
-    if (!alvo?.id || alvo.id === dados.id) return;
-    await executar(() => repo.definirAtual(userId, alvo.id));
+    if (!alvo || alvo.id === dados.id) return;
+    await executar(() => repo.abrirMesNoBanco(userId, alvo));
     setOffset(0);
     setConfirmarAbrir(false);
   };
@@ -343,6 +391,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   };
 
   const m = rotuloEm(pos);
+  mesVisivelRef.current = mesEm(pos);
 
   const resumos = meses.map((o) => ({
     offset: o,
@@ -382,8 +431,8 @@ function CadernoContas({ session, tema, onAlternarTema }) {
               {m.nome} <span className="text-[var(--rotulo-3)] font-normal">{m.ano}</span>
             </h1>
             <div className="flex gap-2 pb-1">
-              <button onClick={() => setOffset(Math.max(-historico.length, pos - 1))}
-                      disabled={pos <= -historico.length}
+              <button onClick={() => setOffset(Math.max(-limiteAtras, pos - 1))}
+                      disabled={pos <= -limiteAtras}
                       aria-label="Mês anterior"
                       className="w-9 h-9 rounded-full grid place-items-center bg-[var(--preenchido)] disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
                 <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden="true">
@@ -416,13 +465,15 @@ function CadernoContas({ session, tema, onAlternarTema }) {
           </div>
         )}
 
-        {aba === "mes" && !emHistorico && !emFuturo && <AvisoInstalar />}
+        {aba === "mes" && !emHistorico && !emFuturo && !emPassadoVazio && <AvisoInstalar />}
 
-        {(emHistorico || emFuturo) && aba === "mes" && (
+        {(emHistorico || emFuturo || emPassadoVazio) && aba === "mes" && (
           <div className="mb-4 rounded-xl bg-[var(--cartao)] px-4 py-3">
             <div className="flex justify-between items-start gap-3">
               <span className="text-[13px] text-[var(--rotulo-2)] leading-snug">
-                {emHistorico ? "Mês fechado" : "Mês futuro planejado"} — o que você lançar
+                {emHistorico ? "Mês fechado"
+                  : emFuturo ? "Mês futuro planejado"
+                  : "Mês passado, ainda sem lançamento"} — o que você lançar
                 aqui fica só nesse mês, sem mexer no atual.
               </span>
               <button onClick={() => setOffset(0)}
@@ -463,7 +514,9 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             />
           ) : (
             <AbaMes
-              offset={registroEm(pos) ? 0 : pos - distanciaBase}
+              nomeDoMes={m.nome}
+              passado={emPassadoVazio}
+              offset={registroEm(pos) || emPassadoVazio ? 0 : pos - distanciaBase}
               totalMes={totalEm(pos)}
               somaFixosMes={fixosEm(pos)}
               somaParcelasMes={parceladoEm(pos)}
@@ -486,7 +539,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
         {aba === "historico" && (
           <AbaHistorico
             historico={historico}
-            onVerMes={(idx) => { setOffset(idx - historico.length); setAba("mes"); }}
+            onVerMes={(idx) => { setOffset(distanciaMeses(dados, historico[idx])); setAba("mes"); }}
             onApagarMes={(idx) => setConfirmarApagar({ idx, lista: "historico" })}
           />
         )}
@@ -500,7 +553,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             style={{ background: "var(--destaque)", color: "var(--sobre-destaque)" }}>
             Lançar conta
           </button>
-          {emHistorico || emFuturo ? (
+          {emHistorico || emFuturo || emPassadoVazio ? (
             <button onClick={() => setConfirmarAbrir(true)}
               className="px-5 py-3.5 rounded-xl text-[17px] bg-[var(--preenchido)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
               Abrir mês

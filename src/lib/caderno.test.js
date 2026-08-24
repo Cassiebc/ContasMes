@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { faltam, ativoEm, rotuloMes, fecharMes, ehPlanejamentoVazio } from "./caderno";
+import { faltam, ativoEm, rotuloMes, fecharMes, ehPlanejamentoVazio,
+  deslocarMes,
+  posDoMes,
+  distanciaMeses,
+} from "./caderno";
 
 describe("ehPlanejamentoVazio", () => {
   it("mês sem lançamento é planejamento vazio", () => {
@@ -110,5 +114,107 @@ describe("fecharMes", () => {
     const original = [{ id: "1", tipo: "parcelado", nome: "Notebook", valor: 100, paga: 3, total: 10 }];
     fecharMes({ itens: original, mesBase: 0, anoBase: 2026 });
     expect(original[0].paga).toBe(3);
+  });
+});
+
+describe("deslocarMes", () => {
+  it("anda pra frente dentro do mesmo ano", () => {
+    expect(deslocarMes(0, 2026, 3)).toEqual({ mesBase: 3, anoBase: 2026 });
+  });
+
+  it("anda pra tras dentro do mesmo ano", () => {
+    // novembro (10) menos 3 = agosto (7) — o caso da usuaria presa em novembro
+    expect(deslocarMes(10, 2026, -3)).toEqual({ mesBase: 7, anoBase: 2026 });
+  });
+
+  it("volta pro ano anterior sem quebrar", () => {
+    // janeiro menos 1 = dezembro do ano passado. O `%` do JS daria -1 aqui.
+    expect(deslocarMes(0, 2026, -1)).toEqual({ mesBase: 11, anoBase: 2025 });
+  });
+
+  it("volta mais de um ano", () => {
+    expect(deslocarMes(1, 2026, -14)).toEqual({ mesBase: 11, anoBase: 2024 });
+  });
+
+  it("avanca pro ano seguinte", () => {
+    expect(deslocarMes(11, 2026, 1)).toEqual({ mesBase: 0, anoBase: 2027 });
+  });
+});
+
+describe("rotuloMes na virada do ano", () => {
+  it("nomeia o mes certo voltando de janeiro", () => {
+    expect(rotuloMes(0, 2026, -1)).toEqual({ nome: "dezembro", ano: 2025 });
+  });
+
+  it("nomeia o mes certo voltando de fevereiro", () => {
+    expect(rotuloMes(1, 2026, -3)).toEqual({ nome: "novembro", ano: 2025 });
+  });
+});
+
+describe("posDoMes", () => {
+  const mes = (mesBase, anoBase, itens = []) => ({ mesBase, anoBase, itens });
+
+  it("acha o mes atual no passo zero", () => {
+    const est = { dados: mes(10, 2026), historico: [], futuro: [] };
+    expect(posDoMes({ mesBase: 10, anoBase: 2026 }, est)).toBe(0);
+  });
+
+  it("acha um mes do historico pelo indice", () => {
+    const est = { dados: mes(10, 2026), historico: [mes(8, 2026), mes(9, 2026)], futuro: [] };
+    expect(posDoMes({ mesBase: 8, anoBase: 2026 }, est)).toBe(-2);
+    expect(posDoMes({ mesBase: 9, anoBase: 2026 }, est)).toBe(-1);
+  });
+
+  it("acha um mes planejado", () => {
+    const est = { dados: mes(10, 2026), historico: [], futuro: [mes(11, 2026)] };
+    expect(posDoMes({ mesBase: 11, anoBase: 2026 }, est)).toBe(1);
+  });
+
+  it("conta pra tras um mes que nao existe", () => {
+    // novembro atual, sem historico: agosto fica tres passos atras
+    const est = { dados: mes(10, 2026), historico: [], futuro: [] };
+    expect(posDoMes({ mesBase: 7, anoBase: 2026 }, est)).toBe(-3);
+  });
+
+  it("a posicao de um mes do passado nao muda quando ele passa a existir", () => {
+    // Esse e o ponto da navegacao por calendario: agosto fica no passo -3 de
+    // novembro tendo registro ou nao. Antes ele pulava de -3 pra -1 assim que
+    // recebia um lancamento, e a tela ia parar em junho.
+    const alvo = { mesBase: 7, anoBase: 2026 };
+    const antes = { dados: mes(10, 2026), historico: [], futuro: [] };
+    const depois = { dados: mes(10, 2026), historico: [mes(7, 2026)], futuro: [] };
+    expect(posDoMes(alvo, antes)).toBe(-3);
+    expect(posDoMes(alvo, depois)).toBe(-3);
+  });
+
+  it("mantem alcancaveis os meses entre o atual e um historico antigo", () => {
+    // historico so tem agosto, mas setembro e outubro precisam ter posicao
+    // propria — senao a seta pula direto pra agosto e eles somem.
+    const est = { dados: mes(10, 2026), historico: [mes(7, 2026)], futuro: [] };
+    expect(posDoMes({ mesBase: 9, anoBase: 2026 }, est)).toBe(-1);
+    expect(posDoMes({ mesBase: 8, anoBase: 2026 }, est)).toBe(-2);
+    expect(posDoMes({ mesBase: 7, anoBase: 2026 }, est)).toBe(-3);
+  });
+
+  it("atravessa a virada do ano pra tras", () => {
+    const est = { dados: mes(1, 2026), historico: [], futuro: [] };
+    expect(posDoMes({ mesBase: 10, anoBase: 2025 }, est)).toBe(-3);
+  });
+
+  it("conta pra frente alem do ultimo planejado", () => {
+    const est = { dados: mes(10, 2026), historico: [], futuro: [mes(11, 2026)] };
+    expect(posDoMes({ mesBase: 1, anoBase: 2027 }, est)).toBe(3);
+  });
+});
+
+describe("distanciaMeses", () => {
+  it("conta dentro do ano", () => {
+    expect(distanciaMeses({ mesBase: 7, anoBase: 2026 }, { mesBase: 10, anoBase: 2026 })).toBe(3);
+  });
+  it("conta atravessando o ano", () => {
+    expect(distanciaMeses({ mesBase: 10, anoBase: 2025 }, { mesBase: 1, anoBase: 2026 })).toBe(3);
+  });
+  it("conta pra tras", () => {
+    expect(distanciaMeses({ mesBase: 10, anoBase: 2026 }, { mesBase: 7, anoBase: 2026 })).toBe(-3);
   });
 });

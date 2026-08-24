@@ -146,6 +146,13 @@ export async function apagarMes(mesId) {
 // Muda qual mês é o atual. É isto que "abrir mês" faz agora: nada é movido
 // de lista nenhuma, só troca a marca — o resto da linha do tempo se
 // reorganiza sozinho pela ordem das datas.
+// Torna atual um mês que pode ainda não existir — é o caso de quem voltou
+// pra um mês que nunca registrou. Cria a linha antes de marcar.
+export async function abrirMesNoBanco(userId, mes) {
+  const mesId = mes.id ?? (await garantirMes(userId, mes));
+  await definirAtual(userId, mesId);
+}
+
 export async function definirAtual(userId, mesId) {
   const { error: erroLimpa } = await supabase
     .from("meses")

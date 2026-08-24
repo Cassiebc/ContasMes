@@ -66,6 +66,13 @@ sua parte e bastava uma esquecer. Hoje o banco recusa dado incoerente
 uma cópia própria. Ao mexer aqui, mantenha as duas coisas: regra no banco
 quando der, e uma leitura só como fonte de verdade.
 
+**A linha do tempo anda pelo calendário para trás, por registros para
+frente.** Um passo atrás é sempre o mês anterior, exista ou não; um passo à
+frente conta os meses planejados. Se mexer nisso, lembre que `offset` guarda
+**passos**, não meses — e que uma escrita pode reordenar a linha do tempo, por
+isso `executar()` reancora a posição pelo mês (`posDoMes`) depois de reler.
+Sem a reancoragem, lançar num mês do passado joga a tela para outro mês.
+
 ## Como testar de verdade
 
 `npm test` cobre só as funções puras. O que pegou os bugs desta semana foram
@@ -77,4 +84,6 @@ supor a causa. Cenários que já quebraram e valem revisitar:
 - lançar parcela num mês, abrir um mês anterior e conferir a projeção (a
   parcela sumia dos meses seguintes);
 - restaurar backup por cima de um caderno diferente (mês duplicava);
-- apagar o último lançamento de um mês planejado (o mês zerava a projeção).
+- apagar o último lançamento de um mês planejado (o mês zerava a projeção);
+- estando num mês adiantado e sem histórico, voltar meses e lançar lá
+  (a seta nascia desabilitada e não havia como corrigir o mês errado).
