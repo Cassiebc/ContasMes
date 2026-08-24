@@ -58,6 +58,7 @@ src/
     repositorio.js  todo o acesso ao banco; a tela não conhece SQL
     tema.js         hook useTema (claro/escuro + persistência)
     atualizacao.js  detecta versão nova publicada e recarrega o app
+    instalacao.js   hook useInstalacao (convite de instalar o PWA)
   components/
     AbaMes.jsx          o mês atual (ou projeção calculada)
     AbaMesHistorico.jsx um mês concreto de historico/futuro
@@ -71,6 +72,7 @@ src/
     ModalApagarMes.jsx  confirmação de apagar mês / descartar planejamento
     AlertaIOS.jsx       caixa de confirmação no padrão do iOS
     BotaoTema.jsx       alterna claro/escuro
+    Instalar.jsx        convite de instalar: aviso dispensável + linha fixa
 public/
   manifest.json     standalone, portrait, ícones normais + maskable, screenshots
   sw.js             service worker, cache "caderno-v1", network-first
@@ -245,6 +247,34 @@ Pendências conhecidas (decisão do usuário, não bugs):
 O service worker mantém a **interface** funcionando sem internet, mas os dados
 vêm do servidor. Sem conexão dá para abrir o app e ver a última tela
 carregada, mas não dá para salvar — e um aviso aparece dizendo isso.
+
+## Instalar na tela inicial
+
+O app já cumpria os requisitos de instalação (manifest com `standalone`,
+ícones de 192 e 512, maskable, service worker com `fetch`, HTTPS) — o que
+faltava era **descoberta**: no Android o caminho é o menu ⋮ → "Instalar app",
+que quase ninguém procura.
+
+`lib/instalacao.js` captura o evento `beforeinstallprompt` **no topo do
+módulo**, não dentro de um efeito: o Chrome dispara cedo, muitas vezes antes
+do React montar, e um listener registrado depois perde o evento. O convite
+fica guardado numa variável do módulo e os componentes se inscrevem para
+saber quando ele chega.
+
+Dois pontos de entrada, um para cada momento:
+
+- `AvisoInstalar` — cartão na aba "o mês", dispensável. Some pra sempre
+  quando dispensado (`localStorage`) ou quando o app é instalado.
+- `LinhaInstalar` — linha fixa em "projeção", para quem dispensou e mudou de
+  ideia. Some só quando já está instalado.
+
+No **iPhone não existe** `beforeinstallprompt`: o Safari só instala pelo botão
+de compartilhar. Aí o botão abre um alerta ensinando o caminho, em vez de
+tentar chamar uma API que não existe.
+
+Detalhe que é fácil errar: `e.preventDefault()` no evento é obrigatório —
+sem ele o Chrome mostra a barra de instalação dele por cima da nossa. E o
+convite **só serve uma vez**; depois de usado tem que ser descartado.
 
 ## Atualização depois de um deploy
 

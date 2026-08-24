@@ -6,6 +6,7 @@ import * as repo from "./lib/repositorio.js";
 import { useTema } from "./lib/tema.js";
 import AbaMes from "./components/AbaMes.jsx";
 import AbaProjecao from "./components/AbaProjecao.jsx";
+import { AvisoInstalar } from "./components/Instalar.jsx";
 import AbaHistorico from "./components/AbaHistorico.jsx";
 import AbaMesHistorico from "./components/AbaMesHistorico.jsx";
 import ModalFecharMes from "./components/ModalFecharMes.jsx";
@@ -414,6 +415,8 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             {erro}
           </div>
         )}
+
+        {aba === "mes" && !emHistorico && !emFuturo && <AvisoInstalar />}
 
         {(emHistorico || emFuturo) && aba === "mes" && (
           <div className="mb-4 rounded-xl bg-[var(--cartao)] px-4 py-3">

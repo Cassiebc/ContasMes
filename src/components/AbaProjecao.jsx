@@ -1,4 +1,5 @@
 import { brl } from "../lib/caderno";
+import { LinhaInstalar } from "./Instalar.jsx";
 
 export default function AbaProjecao({ resumos, onExportar, onExportarCsv, onImportar }) {
   const maxTotal = Math.max(1, ...resumos.map((r) => r.total));
@@ -31,6 +32,8 @@ export default function AbaProjecao({ resumos, onExportar, onExportarCsv, onImpo
       <p className="text-[13px] text-[var(--rotulo-2)] px-4 mb-6">
         A projeção usa só o que está lançado. Compras novas entram por cima.
       </p>
+
+      <LinhaInstalar />
 
       <h3 className="text-[13px] uppercase tracking-wide text-[var(--rotulo-2)] mb-1.5 ml-4">
         backup
