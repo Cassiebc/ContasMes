@@ -5,3 +5,6 @@ dist
 .vercel
 .env*
 !.env.example
+
+# Planilhas de trabalho: ficam fora do repositorio, sao documento pessoal
+*.xlsx
