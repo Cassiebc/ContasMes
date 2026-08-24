@@ -1,74 +1,18 @@
 import { describe, it, expect } from "vitest";
-import { faltam, ativoEm, rotuloMes, fecharMes, semPlanejamentoVazio, normalizarCaderno } from "./caderno";
+import { faltam, ativoEm, rotuloMes, fecharMes, ehPlanejamentoVazio } from "./caderno";
 
-describe("normalizarCaderno", () => {
-  const mes = (m, itens = [{ id: "1", nome: "x", valor: 10, tipo: "fixo" }]) =>
-    ({ mesBase: m, anoBase: 2026, itens });
-
-  it("descarta planejamento vazio, venha de onde vier", () => {
-    const r = normalizarCaderno({
-      dados: mes(7),
-      historico: [],
-      futuro: [mes(8, []), mes(9)],
-    });
-    expect(r.futuro.map((m) => m.mesBase)).toEqual([9]);
+describe("ehPlanejamentoVazio", () => {
+  it("mês sem lançamento é planejamento vazio", () => {
+    expect(ehPlanejamentoVazio({ mesBase: 8, anoBase: 2026, itens: [] })).toBe(true);
   });
 
-  it("não mexe num caderno que já está em ordem", () => {
-    const entrada = { dados: mes(7), historico: [mes(6)], futuro: [mes(8)] };
-    expect(normalizarCaderno(entrada)).toEqual(entrada);
+  it("mês com lançamento não é", () => {
+    expect(ehPlanejamentoVazio({ mesBase: 8, anoBase: 2026, itens: [{ id: "1", valor: 10 }] })).toBe(false);
   });
 
-  it("mantém mês fechado vazio no histórico (é registro legítimo)", () => {
-    const r = normalizarCaderno({ dados: mes(7), historico: [mes(6, [])], futuro: [] });
-    expect(r.historico).toHaveLength(1);
-  });
-
-  it("aguenta colunas nulas ou com lixo", () => {
-    const r = normalizarCaderno({ dados: mes(7), historico: null, futuro: undefined });
-    expect(r.historico).toEqual([]);
-    expect(r.futuro).toEqual([]);
-  });
-
-  it("joga fora registro de mês malformado", () => {
-    const r = normalizarCaderno({
-      dados: mes(7),
-      historico: [{ mesBase: "x", anoBase: 2026, itens: [] }, mes(6)],
-      futuro: [{ semNada: true }],
-    });
-    expect(r.historico.map((m) => m.mesBase)).toEqual([6]);
-    expect(r.futuro).toEqual([]);
-  });
-
-  it("repõe um mês atual válido se vier quebrado", () => {
-    const r = normalizarCaderno({ dados: null, historico: [], futuro: [] });
-    expect(Number.isInteger(r.dados.mesBase)).toBe(true);
-    expect(r.dados.itens).toEqual([]);
-  });
-});
-
-describe("semPlanejamentoVazio", () => {
-  const comItens = (mes) => ({ mesBase: mes, anoBase: 2026, itens: [{ id: "1", nome: "x", valor: 10, tipo: "fixo" }] });
-  const vazio = (mes) => ({ mesBase: mes, anoBase: 2026, itens: [] });
-
-  it("tira os meses planejados sem lançamento", () => {
-    expect(semPlanejamentoVazio([vazio(8), comItens(9)])).toEqual([comItens(9)]);
-  });
-
-  it("mantém a ordem dos que sobram", () => {
-    const r = semPlanejamentoVazio([comItens(8), vazio(9), comItens(10)]);
-    expect(r.map((m) => m.mesBase)).toEqual([8, 10]);
-  });
-
-  it("não mexe quando nenhum está vazio", () => {
-    const lista = [comItens(8), comItens(9)];
-    expect(semPlanejamentoVazio(lista)).toEqual(lista);
-  });
-
-  it("aguenta lista vazia, undefined e item malformado", () => {
-    expect(semPlanejamentoVazio([])).toEqual([]);
-    expect(semPlanejamentoVazio(undefined)).toEqual([]);
-    expect(semPlanejamentoVazio([null, { mesBase: 1 }])).toEqual([]);
+  it("aguenta mês nulo ou sem a lista de itens", () => {
+    expect(ehPlanejamentoVazio(null)).toBe(true);
+    expect(ehPlanejamentoVazio({ mesBase: 8, anoBase: 2026 })).toBe(true);
   });
 });
 

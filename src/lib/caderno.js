@@ -29,30 +29,13 @@ export const rotuloMes = (base, ano, offset) => {
   return { nome: MESES[i], ano: a };
 };
 
-// Um mês planejado sem nenhum lançamento não guarda informação: "outubro
-// planejado, vazio" e "outubro ainda não planejado" dizem a mesma coisa. Só
-// que o registro vazio atrapalha — zera a projeção daquele mês e, ao ser
-// adotado num fechamento, apagaria as contas fixas. Eles aparecem sozinhos
-// (o "abrir mês" empurra pra frente meses que estavam vazios), então some-se
-// com eles na entrada e na saída, em vez de exigir que o usuário perceba e
-// limpe na mão.
-export const semPlanejamentoVazio = (futuro) =>
-  (Array.isArray(futuro) ? futuro : []).filter((m) => m?.itens?.length > 0);
-
-const mesValido = (m) =>
-  m && Number.isInteger(m.mesBase) && Number.isInteger(m.anoBase) && Array.isArray(m.itens);
-
-// Porta de entrada única do estado do caderno: toda gravação passa por aqui,
-// então não importa por qual caminho a alteração veio (lançar, fechar, abrir,
-// apagar, restaurar) — o que vai pro banco obedece as mesmas regras.
-//
-// Antes cada operação cuidava disso por conta própria, e bastava esquecer de
-// uma pra reaparecer um mês planejado vazio zerando a projeção.
-export const normalizarCaderno = ({ dados, historico, futuro }) => ({
-  dados: mesValido(dados) ? dados : novoCaderno(),
-  historico: (Array.isArray(historico) ? historico : []).filter(mesValido),
-  futuro: semPlanejamentoVazio(futuro).filter(mesValido),
-});
+// Um mês à frente sem nenhum lançamento não é planejamento: "outubro
+// planejado, vazio" e "outubro ainda não planejado" dizem a mesma coisa, e
+// guardar o registro só atrapalha (zera a projeção daquele mês e, se for
+// adotado num fechamento, apaga as contas fixas). Quem aplica isso ao ler e
+// gravar é o repositório — aqui fica só a regra, pra poder ser testada
+// sozinha.
+export const ehPlanejamentoVazio = (mes) => !(mes?.itens?.length > 0);
 
 // Avança todas as parcelas em 1, remove as que chegaram ao fim e vira o mês base.
 export const fecharMes = ({ itens, mesBase, anoBase }) => {

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
-import { MESES, novoCaderno, ativoEm, faltam, rotuloMes, fecharMes, normalizarCaderno } from "./lib/caderno";
+import { MESES, ativoEm, faltam, rotuloMes, fecharMes } from "./lib/caderno";
+import * as repo from "./lib/repositorio.js";
 import { useTema } from "./lib/tema.js";
 import AbaMes from "./components/AbaMes.jsx";
 import AbaProjecao from "./components/AbaProjecao.jsx";
@@ -43,7 +44,11 @@ function Abrindo() {
 }
 
 function CadernoContas({ session, tema, onAlternarTema }) {
+  const userId = session.user.id;
+
   const [dados, setDados] = useState(null);
+  const [historico, setHistorico] = useState([]);
+  const [futuro, setFuturo] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [salvando, setSalvando] = useState(false);
@@ -54,8 +59,6 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const [confirmarFechar, setConfirmarFechar] = useState(false);
   const [confirmarAbrir, setConfirmarAbrir] = useState(false);
   const [confirmarApagar, setConfirmarApagar] = useState(null);
-  const [historico, setHistorico] = useState([]);
-  const [futuro, setFuturo] = useState([]);
   const [online, setOnline] = useState(() => navigator.onLine);
 
   useEffect(() => {
@@ -70,101 +73,60 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   }, []);
 
   useEffect(() => {
-    let vivo = true;
-    (async () => {
-      const { data, error } = await supabase
-        .from("cadernos")
-        .select("dados, dados_anterior, historico, futuro")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
-
-      if (!vivo) return;
-      if (error) {
-        setErro("Não deu para carregar seus dados. Verifique a conexão.");
-        setDados(null);
-      } else if (data) {
-        // Migra o snapshot único do formato antigo (dados_anterior) pra
-        // dentro do histórico, se ainda não tiver sido migrado.
-        const hist = Array.isArray(data.historico) ? data.historico : [];
-        const limpo = normalizarCaderno({
-          dados: data.dados,
-          historico:
-            hist.length === 0 && data.dados_anterior
-              ? [{ ...data.dados_anterior, fechadoEm: null }]
-              : hist,
-          futuro: data.futuro,
-        });
-        setDados(limpo.dados);
-        setHistorico(limpo.historico);
-        setFuturo(limpo.futuro);
-        // Se o que estava gravado destoava das regras, corrige no banco
-        // agora — senão a limpeza teria de acontecer a cada abertura.
-        if (JSON.stringify(limpo.futuro) !== JSON.stringify(data.futuro ?? [])) {
-          supabase
-            .from("cadernos")
-            .update({ futuro: limpo.futuro })
-            .eq("user_id", session.user.id)
-            .then(() => {});
-        }
-      } else {
-        // Primeiro acesso: cria um caderno vazio no mês corrente.
-        const inicial = novoCaderno();
-        await supabase.from("cadernos").insert({ user_id: session.user.id, dados: inicial });
-        setDados(inicial);
-      }
-      setCarregando(false);
-    })();
-    return () => { vivo = false; };
-  }, [session.user.id]);
-
-  useEffect(() => {
     if (!salvo) return;
     const t = setTimeout(() => setSalvo(false), 2000);
     return () => clearTimeout(t);
   }, [salvo]);
 
-  // Única porta de escrita do caderno. Recebe o que muda (mês atual,
-  // histórico e/ou futuro), passa o conjunto por normalizarCaderno e grava as
-  // três colunas juntas.
-  //
-  // Existiam três funções de gravação, cada uma cuidando de uma coluna e
-  // lembrando por conta própria das regras de consistência — bastava um
-  // caminho esquecer (apagar o último item de um mês planejado, por exemplo)
-  // pra sobrar um registro vazio bagunçando a projeção. Com uma porta só, a
-  // regra vale pra toda alteração, tenha vindo de onde tiver vindo.
-  const gravar = async (mudanca) => {
-    const anterior = { dados, historico, futuro };
-    const novo = normalizarCaderno({
-      dados: mudanca.dados ?? dados,
-      historico: mudanca.historico ?? historico,
-      futuro: mudanca.futuro ?? futuro,
-    });
+  const aplicar = (estado) => {
+    setDados(estado.dados);
+    setHistorico(estado.historico);
+    setFuturo(estado.futuro);
+  };
 
-    setDados(novo.dados);
-    setHistorico(novo.historico);
-    setFuturo(novo.futuro);
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        await repo.migrarDoFormatoAntigo(userId);
+        const estado = await repo.carregar(userId);
+        if (!vivo) return;
+        aplicar(estado);
+      } catch (e) {
+        if (!vivo) return;
+        setErro("Não deu para carregar seus dados. Verifique a conexão.");
+        setDados(null);
+      } finally {
+        if (vivo) setCarregando(false);
+      }
+    })();
+    return () => { vivo = false; };
+  }, [userId]);
+
+  // Toda alteração passa por aqui: executa a escrita e relê o caderno do
+  // banco. Antes o estado da tela era atualizado por conta própria e ia
+  // separando da verdade a cada operação esquecida; agora o banco é quem
+  // manda, e a tela é sempre o reflexo dele.
+  const executar = async (acao) => {
     setSalvando(true);
     setSalvo(false);
-
-    const { error } = await supabase.from("cadernos").upsert({
-      user_id: session.user.id,
-      dados: novo.dados,
-      historico: novo.historico,
-      futuro: novo.futuro,
-      updated_at: new Date().toISOString(),
-    });
-
-    setSalvando(false);
-    if (error) {
-      setDados(anterior.dados);
-      setHistorico(anterior.historico);
-      setFuturo(anterior.futuro);
-      setErro("Não deu para salvar. A alteração foi desfeita — tente de novo.");
+    try {
+      await acao();
+      aplicar(await repo.carregar(userId));
+      setErro(null);
+      setSalvo(true);
+      return true;
+    } catch (e) {
+      setErro("Não deu para salvar. Tente de novo.");
+      try {
+        aplicar(await repo.carregar(userId));
+      } catch {
+        // sem conexão: mantém o que está na tela
+      }
       return false;
+    } finally {
+      setSalvando(false);
     }
-    setErro(null);
-    setSalvo(true);
-    return true;
   };
 
   if (carregando) return <Abrindo />;
@@ -173,9 +135,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     return (
       <div className="min-h-screen bg-stone-100 dark:bg-stone-900 dark:text-stone-100 flex items-center justify-center px-5">
         <div className="max-w-sm text-center">
-          <p className="text-sm mb-4">
-            {erro || "Não deu para carregar seus dados."}
-          </p>
+          <p className="text-sm mb-4">{erro || "Não deu para carregar seus dados."}</p>
           <button onClick={() => window.location.reload()}
             className="border border-stone-400 dark:border-stone-600 px-5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
             tentar de novo
@@ -187,16 +147,9 @@ function CadernoContas({ session, tema, onAlternarTema }) {
 
   const { itens, mesBase, anoBase } = dados;
 
-  // Linha do tempo, do passado pro futuro:
-  //   offset < 0                     → historico (mês fechado, congelado)
-  //   offset === 0                   → dados (o mês atual, editável de verdade)
-  //   0 < offset <= futuro.length    → futuro (mês planejado, congelado)
-  //   offset > futuro.length         → projeção calculada (sem registro próprio)
-  //
-  // Uma gravação que reorganiza a linha do tempo (abrir mês, fechar mês,
-  // apagar) troca as listas antes do offset ser reposicionado, e por um
-  // instante ele aponta pra um mês que deixou de existir. Prender o offset ao
-  // que existe agora evita a tela quebrar nesse meio-tempo.
+  // A linha do tempo é a ordem das datas; `offset` é a distância até o mês
+  // atual. Negativo cai no histórico, positivo no planejado, e além do
+  // último mês que existe a projeção é calculada.
   const pos = Math.max(offset, -historico.length);
 
   const emHistorico = pos < 0;
@@ -207,15 +160,8 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const idxFuturo = emFuturo ? pos - 1 : null;
   const entryFuturo = emFuturo ? futuro[idxFuturo] : null;
 
-  // Registro concreto pra um offset >= 0 (dados ou uma entrada de futuro),
-  // ou null se cair na zona de projeção calculada (sem registro próprio).
-  //
   // A projeção continua de onde a linha do tempo concreta parou — o último
-  // mês planejado, ou o mês atual quando não há planejamento. Partir sempre
-  // do mês atual perderia o que foi lançado nos planejados: uma parcela
-  // criada em setembro não apareceria em outubro. Isso só é seguro porque
-  // planejamento vazio não existe mais (normalizarCaderno descarta), senão um
-  // registro vazio zeraria tudo daí pra frente.
+  // mês planejado, ou o atual quando não há planejamento.
   const ultimoConcreto = futuro.length > 0 ? futuro[futuro.length - 1] : dados;
   const distanciaBase = futuro.length;
 
@@ -255,132 +201,78 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     (_, i) => i
   );
 
-  const remover = (id) => gravar({ dados: { ...dados, itens: itens.filter((i) => i.id !== id) } });
+  // Em que mês a alteração cai: o que está na tela, quando ele existe de
+  // fato; senão o mês atual (a zona de projeção não tem registro próprio).
+  const mesDaTela = () => (emHistorico ? entryHistorico : emFuturo ? entryFuturo : dados);
 
-  const removerHistorico = (idx, id) =>
-    gravar({
-      historico: historico.map((h, i) =>
-        i === idx ? { ...h, itens: h.itens.filter((it) => it.id !== id) } : h
-      ),
-    });
-
-  // Tirar o último item de um mês planejado deixa ele sem lançamento nenhum;
-  // normalizarCaderno some com o registro, e o offset volta pro mês atual
-  // pra não apontar pra um mês que deixou de existir.
-  const removerFuturo = async (idx, id) => {
-    const novoFuturo = futuro.map((f, i) =>
-      i === idx ? { ...f, itens: f.itens.filter((it) => it.id !== id) } : f
-    );
-    const ok = await gravar({ futuro: novoFuturo });
-    if (ok && novoFuturo[idx]?.itens.length === 0) setOffset(0);
-  };
-
-  // Apaga um mês inteiro da linha do tempo — um mês fechado do histórico ou
-  // um mês planejado do futuro. Serve pra limpar mês repetido ou planejamento
-  // que sobrou e não faz mais sentido.
-  const apagarMes = async () => {
-    const { idx, lista } = confirmarApagar;
-    if (lista === "historico") {
-      await gravar({ historico: historico.filter((_, i) => i !== idx) });
-    } else {
-      const ok = await gravar({ futuro: futuro.filter((_, i) => i !== idx) });
-      // Se o mês descartado é o que está na tela, volta pro mês atual pra
-      // não ficar apontando pra um offset que não existe mais.
-      if (ok) setOffset(0);
-    }
-    setConfirmarApagar(null);
-  };
+  const remover = (id) => executar(() => repo.removerLancamento(id));
 
   const gravarForm = () => {
     const nome = (form.nome || "").trim();
     const valor = parseFloat(String(form.valor).replace(",", "."));
     if (!nome || !valor || valor <= 0) return;
-    const novo = {
-      id: form.id || String(Date.now()),
+
+    const item = {
       nome,
       valor,
       tipo: form.tipo,
       ...(form.tipo === "parcelado"
-        ? {
-            paga: Math.max(1, parseInt(form.paga) || 1),
-            total: Math.max(1, parseInt(form.total) || 1),
-          }
+        ? (() => {
+            const paga = Math.max(1, parseInt(form.paga) || 1);
+            return { paga, total: Math.max(paga, parseInt(form.total) || 1) };
+          })()
         : {}),
     };
 
-    if (emHistorico) {
-      gravar({
-        historico: historico.map((h, i) => {
-          if (i !== idxHistorico) return h;
-          const lista = form.id
-            ? h.itens.map((it) => (it.id === form.id ? novo : it))
-            : [...h.itens, novo];
-          return { ...h, itens: lista };
-        }),
-      });
-    } else if (emFuturo) {
-      gravar({
-        futuro: futuro.map((f, i) => {
-          if (i !== idxFuturo) return f;
-          const lista = form.id
-            ? f.itens.map((it) => (it.id === form.id ? novo : it))
-            : [...f.itens, novo];
-          return { ...f, itens: lista };
-        }),
-      });
-    } else {
-      const lista = form.id
-        ? itens.map((i) => (i.id === form.id ? novo : i))
-        : [...itens, novo];
-      gravar({ dados: { ...dados, itens: lista } });
-    }
+    const alvo = mesDaTela();
+    executar(() =>
+      form.id ? repo.editarLancamento(form.id, item) : repo.lancar(userId, alvo, item)
+    );
     setForm(null);
   };
 
   const virarMes = async () => {
-    const novoHistorico = [
-      ...historico,
-      { mesBase, anoBase, itens, fechadoEm: new Date().toISOString() },
-    ];
-
-    // Só um planejamento com lançamentos vira o próximo mês; sem ele (ou
-    // sendo vazio, que normalizarCaderno já descartou), o mês avança
-    // normalmente — fixos seguem, parcelas andam uma casa.
-    const proximo = futuro[0];
-    const novoAtual = proximo ? proximo : { ...dados, ...fecharMes(dados) };
-    const restoFuturo = proximo ? futuro.slice(1) : futuro;
-
-    await gravar({ dados: novoAtual, historico: novoHistorico, futuro: restoFuturo });
+    const planejado = futuro[0];
+    const avancado = fecharMes(dados);
+    const proximo = planejado ?? { mesBase: avancado.mesBase, anoBase: avancado.anoBase };
+    await executar(() =>
+      repo.fecharMesNoBanco(userId, dados, planejado ? [] : avancado.itens, proximo)
+    );
     setOffset(0);
     setConfirmarFechar(false);
   };
 
-  // Torna o mês visto agora o mês atual. Tudo que ficava entre ele e o mês
-  // atual antigo (e o próprio mês atual antigo) vira "futuro planejado" —
-  // nada é descartado, só reordenado.
+  // Vira o mês visto no mês atual. Nada é movido de lista: só muda qual mês
+  // carrega a marca de atual, e a linha do tempo se reordena pelas datas.
   const abrirMes = async () => {
-    let novoDados, novoHistorico, novoFuturo;
-    if (emHistorico) {
-      novoDados = historico[idxHistorico];
-      novoHistorico = historico.slice(0, idxHistorico);
-      novoFuturo = [...historico.slice(idxHistorico + 1), dados, ...futuro];
-    } else if (emFuturo) {
-      novoDados = futuro[idxFuturo];
-      novoFuturo = futuro.slice(idxFuturo + 1);
-      novoHistorico = [...historico, dados, ...futuro.slice(0, idxFuturo)];
-    } else {
-      return;
-    }
-    await gravar({ dados: novoDados, historico: novoHistorico, futuro: novoFuturo });
+    const alvo = mesDaTela();
+    if (!alvo?.id || alvo.id === dados.id) return;
+    await executar(() => repo.definirAtual(userId, alvo.id));
     setOffset(0);
     setConfirmarAbrir(false);
   };
 
-  // Salva o caderno inteiro — mês atual, meses fechados e meses planejados.
-  // Antes só o mês atual ia no arquivo, e restaurar por cima de um histórico
-  // existente duplicava o mês.
+  const apagarMes = async () => {
+    const lista = confirmarApagar.lista === "historico" ? historico : futuro;
+    const alvo = lista[confirmarApagar.idx];
+    if (alvo?.id) await executar(() => repo.apagarMes(alvo.id));
+    setOffset(0);
+    setConfirmarApagar(null);
+  };
+
   const exportar = () => {
-    const caderno = { versao: 2, dados, historico, futuro };
+    const semId = (m) => ({
+      mesBase: m.mesBase,
+      anoBase: m.anoBase,
+      itens: m.itens.map(({ id, ...resto }) => resto),
+      ...(m.fechadoEm ? { fechadoEm: m.fechadoEm } : {}),
+    });
+    const caderno = {
+      versao: 2,
+      dados: semId(dados),
+      historico: historico.map(semId),
+      futuro: futuro.map(semId),
+    };
     const blob = new Blob([JSON.stringify(caderno, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -417,9 +309,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     URL.revokeObjectURL(url);
   };
 
-  // Restaurar troca o caderno INTEIRO pelo do arquivo. Substituir só o mês
-  // atual, como era antes, deixava o histórico antigo no lugar e podia
-  // acabar com o mesmo mês aparecendo duas vezes na linha do tempo.
+  // Restaurar troca o caderno inteiro pelo do arquivo.
   const importar = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -427,24 +317,20 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     reader.onload = async () => {
       try {
         const lido = JSON.parse(reader.result);
-        let novoDados, novoHistorico, novoFuturo;
-
+        let novo;
         if (lido && lido.dados && Array.isArray(lido.dados.itens)) {
-          // Formato novo: caderno completo.
-          novoDados = lido.dados;
-          novoHistorico = Array.isArray(lido.historico) ? lido.historico : [];
-          novoFuturo = Array.isArray(lido.futuro) ? lido.futuro : [];
+          novo = {
+            dados: lido.dados,
+            historico: Array.isArray(lido.historico) ? lido.historico : [],
+            futuro: Array.isArray(lido.futuro) ? lido.futuro : [],
+          };
         } else if (lido && Array.isArray(lido.itens)) {
-          // Formato antigo: só o mês. Restaura ele como o caderno todo, em
-          // vez de encaixar num histórico com o qual ele pode não combinar.
-          novoDados = lido;
-          novoHistorico = [];
-          novoFuturo = [];
+          // Formato antigo: só o mês vira o caderno todo.
+          novo = { dados: lido, historico: [], futuro: [] };
         } else {
           throw new Error("formato desconhecido");
         }
-
-        await gravar({ dados: novoDados, historico: novoHistorico, futuro: novoFuturo });
+        await executar(() => repo.substituirTudo(userId, novo));
         setOffset(0);
       } catch {
         setErro("Esse arquivo não é um backup do Caderno. Escolha o .json que você baixou daqui.");
@@ -454,9 +340,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     e.target.value = "";
   };
 
-  const m = emHistorico
-    ? { nome: MESES[entryHistorico.mesBase], ano: entryHistorico.anoBase }
-    : rotuloEm(pos);
+  const m = rotuloEm(pos);
 
   const resumos = meses.map((o) => ({
     offset: o,
@@ -493,10 +377,10 @@ function CadernoContas({ session, tema, onAlternarTema }) {
               {m.nome} <span className="text-stone-400 dark:text-stone-500">{m.ano}</span>
             </h1>
             <div className="flex gap-1">
-              <button onClick={() => setOffset(Math.max(-historico.length, offset - 1))}
+              <button onClick={() => setOffset(Math.max(-historico.length, pos - 1))}
                       disabled={pos <= -historico.length}
                       className="w-9 h-9 border border-stone-300 dark:border-stone-700 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">←</button>
-              <button onClick={() => setOffset(Math.min(meses.length - 1, offset + 1))}
+              <button onClick={() => setOffset(Math.min(meses.length - 1, pos + 1))}
                       disabled={pos >= meses.length - 1}
                       className="w-9 h-9 border border-stone-300 dark:border-stone-700 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">→</button>
             </div>
@@ -551,17 +435,11 @@ function CadernoContas({ session, tema, onAlternarTema }) {
         </div>
 
         {aba === "mes" && (
-          emHistorico ? (
+          emHistorico || emFuturo ? (
             <AbaMesHistorico
-              entry={entryHistorico}
+              entry={emHistorico ? entryHistorico : entryFuturo}
               onEditar={setForm}
-              onRemover={(id) => removerHistorico(idxHistorico, id)}
-            />
-          ) : emFuturo ? (
-            <AbaMesHistorico
-              entry={entryFuturo}
-              onEditar={setForm}
-              onRemover={(id) => removerFuturo(idxFuturo, id)}
+              onRemover={remover}
             />
           ) : (
             <AbaMes

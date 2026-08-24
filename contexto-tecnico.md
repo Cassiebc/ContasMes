@@ -43,7 +43,8 @@ mas não é necessário.
 index.html          meta tags PWA + script inline que aplica o tema
 vercel.json         rewrite SPA + cabeçalhos de segurança (CSP etc.)
 vite.config.js
-schema.sql          script para rodar no SQL Editor do Supabase
+schema-v2.sql       tabelas `meses` e `lancamentos` (modelo atual)
+schema.sql          modelo antigo (jsonb), mantido como referência
 .env.example        modelo das variáveis (o .env real não é versionado)
 src/
   main.jsx          entrypoint, registra o service worker
@@ -53,7 +54,8 @@ src/
   index.css         @custom-variant dark + reset mínimo
   lib/
     caderno.js      helpers puros (MESES, brl, ativoEm, rotuloMes, fecharMes)
-    caderno.test.js 15 testes da regra de negócio
+    caderno.test.js testes da regra de negócio
+    repositorio.js  todo o acesso ao banco; a tela não conhece SQL
     tema.js         hook useTema (claro/escuro + persistência)
   components/
     AbaMes.jsx          o mês atual (ou projeção calculada)
@@ -75,47 +77,59 @@ public/
 
 ## Banco (Supabase)
 
-Uma única tabela, uma linha por usuário:
+Duas tabelas, criadas por `schema-v2.sql`:
 
 ```sql
-create table public.cadernos (
-  user_id        uuid primary key references auth.users(id) on delete cascade,
-  dados          jsonb not null,          -- o mês ATUAL
-  historico      jsonb not null default '[]',  -- meses já fechados
-  futuro         jsonb not null default '[]',  -- meses planejados à frente
-  dados_anterior jsonb,                   -- legado, ver abaixo
-  updated_at     timestamptz not null default now()
+create table public.meses (
+  id uuid primary key, user_id uuid, ano int, mes int,   -- mes: 0 = janeiro
+  atual boolean not null default false,
+  fechado_em timestamptz,
+  unique (user_id, ano, mes)
+);
+create unique index meses_um_atual_por_usuario
+  on public.meses (user_id) where atual;
+
+create table public.lancamentos (
+  id uuid primary key, mes_id uuid references meses(id) on delete cascade,
+  nome text, valor numeric(12,2), tipo text,   -- 'fixo' | 'parcelado'
+  paga int, total int,
+  constraint parcelas_coerentes check (...)    -- fixo sem parcela; parcelado com paga <= total
 );
 ```
 
-RLS ligado, com 4 políticas (select / insert / update / delete), todas
-`auth.uid() = user_id`. O isolamento entre usuários é garantido **no banco**,
-não no frontend — auditado em 2026-08-21 (leitura e escrita cross-user
-retornam vazio/403).
+O que o banco garante, e antes dependia do código lembrar:
 
-Usa a chave **publishable** (`sb_publishable_...`, o formato novo do que era
-`anon`): pública por design, vai embutida no bundle, e o RLS é quem protege.
-Nunca a `secret`/`service_role`.
+- **mês não se repete** (`unique (user_id, ano, mes)`) — a duplicata de
+  "agosto" que aparecia ao restaurar backup por cima do histórico;
+- **um único mês atual** por pessoa (índice único parcial);
+- **parcela coerente** — não existe "5 de 3", nem fixo com número de parcela;
+- **valor sempre positivo**, nome não vazio.
 
-`dados_anterior` é resquício de uma versão em que só se guardava um snapshot
-para "desfazer". O app migra esse valor para dentro de `historico` no primeiro
-carregamento; a coluna ficou na tabela só para não descartar dados de quem
-ainda não abriu o app desde então.
+RLS ligado nas duas. Em `meses` a política é `auth.uid() = user_id`; em
+`lancamentos`, o dono é quem for dono do mês (via `exists`).
 
-### Formato dos registros
+Usa a chave **publishable** (`sb_publishable_...`): pública por design, vai
+embutida no bundle, e o RLS é quem protege. Nunca a `secret`/`service_role`.
 
-`dados`, e cada item de `historico` e `futuro`, têm a mesma forma:
+### A linha do tempo
 
-```js
-{ mesBase: 0..11, anoBase: 2026, itens: [...], fechadoEm?: ISOString }
-```
+Não existem listas separadas de passado/futuro. Existem meses, ordenados por
+(ano, mes), e **um** deles carrega `atual = true`. O resto sai da comparação:
+antes do atual é fechado, depois é planejado. Assim não dá pra um mês fechado
+aparecer depois do atual, nem a ordem sair errada.
 
-E cada item:
+`abrir mês` virou uma linha: muda qual mês tem `atual`. Nada é movido de lugar.
 
-```js
-{ id, nome, valor, tipo: "fixo" }
-{ id, nome, valor, tipo: "parcelado", paga, total }
-```
+### Migração do formato antigo
+
+A tabela `cadernos` (um jsonb por pessoa, com `dados`/`historico`/`futuro`)
+continua no banco, intacta, como rede de segurança. `repositorio.js` migra
+sozinho na primeira abertura, quando ainda não há meses no formato novo:
+meses repetidos viram um só, com os lançamentos dos dois juntos.
+
+A coluna `lancamentos.origem_id` guarda de qual item antigo veio cada
+lançamento, pra migração poder rodar de novo sem duplicar. Pode sair depois
+que a migração estiver conferida.
 
 ## Regras de negócio
 
@@ -128,29 +142,36 @@ E cada item:
 - Cada usuário começa com caderno vazio, ancorado no mês em que criou a conta
   (lido do relógio do aparelho, em `novoCaderno()` dentro de `lib/caderno.js`).
 
-### A linha do tempo (o conceito central)
+### Como a tela lê a linha do tempo
 
-Tudo gira em torno de um `offset` em `App.jsx`, relativo ao mês atual:
+`App.jsx` trabalha com um `offset` relativo ao mês atual:
 
 | offset | de onde vem | editável? |
 | --- | --- | --- |
-| `< 0` | `historico[offset + historico.length]` | sim, isolado naquele mês |
-| `0` | `dados` — o mês atual de verdade | sim |
-| `1..futuro.length` | `futuro[offset - 1]` | sim, isolado naquele mês |
-| `> futuro.length` | calculado por `ativoEm()` a partir do último mês concreto | sim, mas grava no mês atual |
+| `< 0` | `historico[offset + historico.length]` | sim, só naquele mês |
+| `0` | `dados` — o mês atual | sim |
+| `1..futuro.length` | `futuro[offset - 1]` | sim, só naquele mês |
+| `> futuro.length` | calculado por `ativoEm()` a partir do último mês que existe | sim, mas grava no mês atual |
 
-As mesmas setas ← → percorrem a linha inteira. Lançar/editar/remover num mês
-de `historico` ou `futuro` grava **só naquele registro** (`salvarHistorico` /
-`salvarFuturo`), sem tocar no mês atual nem nos meses entre eles.
+`historico` e `futuro` não são guardados: `repositorio.carregar()` os deriva
+comparando cada mês com o que está marcado como atual.
 
-**Fechar mês** (só habilitado em offset 0): empilha o mês atual no fim de
-`historico` e avança. Se existir `futuro`, adota o primeiro item dele como
-novo mês atual, preservando o que já foi planejado ali; se não existir,
-aplica `fecharMes()` — avança cada parcela em 1 e remove as que acabaram.
+As mesmas setas ← → percorrem a linha inteira. Toda alteração vai pro banco e
+o caderno é relido — a tela é sempre reflexo do banco, nunca uma cópia que
+foi se afastando dele.
 
-**Abrir mês** (em qualquer mês de `historico`/`futuro`): torna aquele mês o
-atual. Tudo que ficava depois dele — incluindo o mês atual antigo — é
-reordenado para `futuro`. Nada é descartado, só muda de lista.
+**Fechar mês**: marca `fechado_em` no mês atual e passa `atual` pro seguinte.
+Se o mês seguinte já existe (foi planejado), ele é adotado com o que tiver
+dentro; se não, é criado com `fecharMes()` — cada parcela avança uma casa e
+as que acabaram somem.
+
+**Abrir mês**: só muda qual mês tem `atual = true`. Não move nada; o resto se
+reorganiza porque "fechado" e "planejado" saem da comparação de datas.
+
+**Mês à frente sem lançamento não é planejamento.** `ehPlanejamentoVazio()`
+marca esses, e `carregar()` os apaga. Guardar um deles zeraria a projeção
+daquele mês e, num fechamento, apagaria as contas fixas — foi bug real duas
+vezes. Mês fechado vazio fica: "nesse mês não tive contas" é informação.
 
 ## Tema claro/escuro
 
