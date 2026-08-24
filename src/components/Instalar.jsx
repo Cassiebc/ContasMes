@@ -71,28 +71,25 @@ export function AvisoInstalar() {
   );
 }
 
-// Linha fixa em "projeção": para quem dispensou o aviso e depois mudou de
-// ideia. Some só quando o app já está instalado.
-export function LinhaInstalar() {
+// Botão na tela de login. É a casa permanente do convite: aparece pra quem
+// ainda não instalou, todo login, e não some por ter sido dispensado — quem
+// fechou o aviso lá dentro reencontra o caminho aqui.
+export function BotaoInstalar() {
   const { disponivel, acionar, explicacao } = useInstalarComExplicacao();
 
   if (!disponivel) return null;
 
   return (
     <>
-      <h3 className="text-[13px] uppercase tracking-wide text-[var(--rotulo-2)] mb-1.5 ml-4">
-        app
-      </h3>
-      <div className="bg-[var(--cartao)] rounded-xl overflow-hidden mb-2">
+      <div className="mt-8 pt-5 border-t border-[var(--separador)]">
         <button onClick={acionar}
-          className="w-full text-left px-4 min-h-[44px] py-3 text-[17px] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--destaque)]">
+          className="w-full min-h-[44px] text-[15px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
           Instalar na tela inicial
         </button>
+        <p className="text-[13px] text-[var(--rotulo-2)] text-center leading-relaxed mt-1">
+          Abre em tela cheia, sem a barra do navegador.
+        </p>
       </div>
-      <p className="text-[13px] text-[var(--rotulo-2)] px-4 mb-6 leading-relaxed">
-        Abre em tela cheia, sem a barra do navegador. É o mesmo caderno e a
-        mesma conta — nada é baixado duas vezes.
-      </p>
       {explicacao}
     </>
   );

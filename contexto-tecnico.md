@@ -73,7 +73,7 @@ src/
     ModalApagarMes.jsx  confirmação de apagar mês / descartar planejamento
     AlertaIOS.jsx       caixa de confirmação no padrão do iOS
     BotaoTema.jsx       alterna claro/escuro
-    Instalar.jsx        convite de instalar: aviso dispensável + linha fixa
+    Instalar.jsx        convite de instalar: botão no login + aviso no mês
 public/
   manifest.json     standalone, portrait, ícones normais + maskable, screenshots
   sw.js             service worker, cache "caderno-v1", network-first
@@ -264,10 +264,15 @@ saber quando ele chega.
 
 Dois pontos de entrada, um para cada momento:
 
-- `AvisoInstalar` — cartão na aba "o mês", dispensável. Some pra sempre
-  quando dispensado (`localStorage`) ou quando o app é instalado.
-- `LinhaInstalar` — linha fixa em "projeção", para quem dispensou e mudou de
-  ideia. Some só quando já está instalado.
+- `BotaoInstalar` — na **tela de login**, abaixo de "não tenho conta ainda".
+  É a casa permanente do convite: aparece a todo login de quem ainda não
+  instalou e não guarda dispensa, então é sempre o caminho de volta.
+- `AvisoInstalar` — cartão dispensável na aba "o mês", para quem já está
+  dentro. Some pra sempre quando dispensado (`localStorage`) ou quando o app
+  é instalado.
+
+Os dois somem quando o app já está instalado. Ficou fora de "projeção": ali
+era pouco visto, que foi o motivo de sair.
 
 No **iPhone não existe** `beforeinstallprompt`: o Safari só instala pelo botão
 de compartilhar. Aí o botão abre um alerta ensinando o caminho, em vez de

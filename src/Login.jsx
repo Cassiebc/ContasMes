@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { supabase } from "./supabase";
 import BotaoTema from "./components/BotaoTema.jsx";
+import { BotaoInstalar } from "./components/Instalar.jsx";
 
 const traduzirErro = (msg) => {
   const mapa = {
@@ -104,6 +105,8 @@ export default function Login({ tema, onAlternarTema }) {
           className="w-full mt-4 min-h-[44px] text-[15px] text-[var(--rotulo-2)] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
           {modo === "entrar" ? "Não tenho conta ainda" : "Já tenho conta"}
         </button>
+
+        <BotaoInstalar />
       </div>
     </div>
   );
