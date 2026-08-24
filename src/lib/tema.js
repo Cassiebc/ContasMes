@@ -17,7 +17,7 @@ export function useTema() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", tema === "escuro");
     document.querySelector('meta[name="theme-color"]')
-      ?.setAttribute("content", tema === "escuro" ? "#1c1917" : "#f5f5f4");
+      ?.setAttribute("content", tema === "escuro" ? "#000000" : "#F2F2F7");
     try {
       localStorage.setItem(CHAVE, tema);
     } catch {

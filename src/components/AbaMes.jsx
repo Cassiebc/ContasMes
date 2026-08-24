@@ -11,10 +11,10 @@ export default function AbaMes({
       <CardTotal total={totalMes} fixos={somaFixosMes} parcelado={somaParcelasMes} />
 
       {itensDoMes.length === 0 ? (
-        <div className="border border-stone-300 dark:border-stone-700 border-dashed p-6 text-center">
-          <p className="text-sm text-stone-600 dark:text-stone-300 mb-1">Caderno em branco.</p>
-          <p className="text-xs text-stone-500 dark:text-stone-400">
-            Toque em <span className="text-stone-800 dark:text-stone-200">lançar conta</span> para
+        <div className="bg-[var(--cartao)] rounded-xl px-5 py-8 text-center">
+          <p className="text-[17px] mb-1">Caderno em branco.</p>
+          <p className="text-[13px] text-[var(--rotulo-2)] leading-relaxed">
+            Toque em <span className="text-[var(--rotulo)]">lançar conta</span> para
             começar. Contas de todo mês entram como fixas; compras no cartão,
             como parceladas.
           </p>

@@ -54,56 +54,55 @@ export default function Login({ tema, onAlternarTema }) {
     }
   };
 
+
   return (
-    <div className="min-h-screen bg-stone-100 dark:bg-stone-900 text-stone-900 dark:text-stone-100 flex items-center justify-center px-5"
-         style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
-      <div className="w-full max-w-sm">
-        <div className="flex justify-between items-baseline">
-          <p className="text-[10px] uppercase tracking-[0.3em] text-stone-500 dark:text-stone-400">
-            caderno de contas
-          </p>
+    <div className="min-h-screen flex flex-col justify-center px-4 py-10"
+         style={{ background: "var(--fundo)", color: "var(--rotulo)" }}>
+      <div className="w-full max-w-sm mx-auto">
+        <div className="flex justify-between items-center mb-1 min-h-[44px]">
+          <p className="text-[13px] text-[var(--rotulo-2)]">Caderno de Contas</p>
           <BotaoTema tema={tema} onAlternar={onAlternarTema} />
         </div>
-        <h1 className="text-3xl lowercase mt-2 mb-8"
-            style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-          {modo === "entrar" ? "entrar" : "criar conta"}
+
+        <h1 className="text-[34px] font-bold tracking-tight leading-none mb-6">
+          {modo === "entrar" ? "Entrar" : "Criar conta"}
         </h1>
 
-        <label className="block text-[10px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 mb-1">
-          e-mail
-        </label>
-        <input type="email" value={email} autoComplete="email"
-          autoCapitalize="none" autoCorrect="off"
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full border border-stone-400 dark:border-stone-600 bg-transparent px-3 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300" />
-
-        <label className="block text-[10px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 mb-1">
-          senha
-        </label>
-        <input type="password" value={senha}
-          autoComplete={modo === "entrar" ? "current-password" : "new-password"}
-          onChange={(e) => setSenha(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && enviar()}
-          className="w-full border border-stone-400 dark:border-stone-600 bg-transparent px-3 py-2 mb-5 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300" />
+        <div className="bg-[var(--cartao)] rounded-xl overflow-hidden lista-ios mb-4">
+          <div className="flex items-center gap-3 px-4 min-h-[44px] py-2">
+            <label htmlFor="email" className="text-[17px] shrink-0 w-[74px]">E-mail</label>
+            <input id="email" type="email" value={email} autoComplete="email"
+              autoCapitalize="none" autoCorrect="off" placeholder="voce@exemplo.com"
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-transparent text-[17px] placeholder:text-[var(--rotulo-3)] focus:outline-none" />
+          </div>
+          <div className="flex items-center gap-3 px-4 min-h-[44px] py-2">
+            <label htmlFor="senha" className="text-[17px] shrink-0 w-[74px]">Senha</label>
+            <input id="senha" type="password" value={senha}
+              autoComplete={modo === "entrar" ? "current-password" : "new-password"}
+              onChange={(e) => setSenha(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && enviar()}
+              className="w-full bg-transparent text-[17px] placeholder:text-[var(--rotulo-3)] focus:outline-none" />
+          </div>
+        </div>
 
         {msg && (
-          <div className={`mb-4 border-l-2 px-3 py-2 text-sm bg-stone-200 dark:bg-stone-800 ${
-            msg.tipo === "erro"
-              ? "border-stone-800 dark:border-stone-200"
-              : "border-stone-500 dark:border-stone-400"}`}>
+          <div className="mb-4 rounded-xl bg-[var(--cartao)] px-4 py-3 text-[13px] leading-snug"
+               style={msg.tipo === "erro" ? { color: "var(--perigo)" } : undefined}>
             {msg.texto}
           </div>
         )}
 
         <button onClick={enviar} disabled={ocupado}
-          className="w-full bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 py-3 text-sm tracking-wide disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-          {ocupado ? "..." : modo === "entrar" ? "entrar" : "criar conta"}
+          className="w-full py-3.5 rounded-xl text-[17px] font-semibold disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--destaque)]"
+          style={{ background: "var(--destaque)", color: "var(--sobre-destaque)" }}>
+          {ocupado ? "…" : modo === "entrar" ? "Entrar" : "Criar conta"}
         </button>
 
         <button
           onClick={() => { setModo(modo === "entrar" ? "criar" : "entrar"); setMsg(null); }}
-          className="w-full mt-4 text-sm text-stone-500 dark:text-stone-400 underline focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-          {modo === "entrar" ? "não tenho conta ainda" : "já tenho conta"}
+          className="w-full mt-4 min-h-[44px] text-[15px] text-[var(--rotulo-2)] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
+          {modo === "entrar" ? "Não tenho conta ainda" : "Já tenho conta"}
         </button>
       </div>
     </div>

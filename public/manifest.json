@@ -3,18 +3,55 @@
   "short_name": "Caderno",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f5f4",
-  "theme_color": "#f5f5f4",
+  "background_color": "#F2F2F7",
+  "theme_color": "#F2F2F7",
   "orientation": "portrait",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
-    { "src": "/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ],
   "screenshots": [
-    { "src": "/screenshot-mes.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "O mês atual, com fixos e parcelados" },
-    { "src": "/screenshot-projecao.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "Projeção dos próximos meses" }
+    {
+      "src": "/screenshot-mes.png",
+      "sizes": "780x1688",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "O mês atual, com fixos e parcelados"
+    },
+    {
+      "src": "/screenshot-projecao.png",
+      "sizes": "780x1688",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Projeção dos próximos meses"
+    }
   ]
 }

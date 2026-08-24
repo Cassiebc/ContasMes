@@ -35,10 +35,9 @@ export default function App() {
 
 function Abrindo() {
   return (
-    <div className="min-h-screen bg-stone-100 dark:bg-stone-900 flex items-center justify-center">
-      <p className="text-stone-500 dark:text-stone-400 text-sm tracking-widest uppercase">
-        abrindo o caderno
-      </p>
+    <div className="min-h-screen flex items-center justify-center"
+         style={{ background: "var(--fundo)" }}>
+      <p className="text-[15px] text-[var(--rotulo-2)]">abrindo o caderno</p>
     </div>
   );
 }
@@ -133,12 +132,14 @@ function CadernoContas({ session, tema, onAlternarTema }) {
 
   if (!dados) {
     return (
-      <div className="min-h-screen bg-stone-100 dark:bg-stone-900 dark:text-stone-100 flex items-center justify-center px-5">
-        <div className="max-w-sm text-center">
-          <p className="text-sm mb-4">{erro || "Não deu para carregar seus dados."}</p>
+      <div className="min-h-screen flex items-center justify-center px-6"
+           style={{ background: "var(--fundo)", color: "var(--rotulo)" }}>
+        <div className="max-w-sm w-full text-center">
+          <p className="text-[17px] mb-5">{erro || "Não deu para carregar seus dados."}</p>
           <button onClick={() => window.location.reload()}
-            className="border border-stone-400 dark:border-stone-600 px-5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-            tentar de novo
+            className="w-full py-3.5 rounded-xl text-[17px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--destaque)]"
+            style={{ background: "var(--destaque)", color: "var(--sobre-destaque)" }}>
+            Tentar de novo
           </button>
         </div>
       </div>
@@ -352,83 +353,99 @@ function CadernoContas({ session, tema, onAlternarTema }) {
 
   const proximoMesLabel = futuro.length > 0 ? MESES[futuro[0].mesBase] : rotuloMes(mesBase, anoBase, 1).nome;
 
-  return (
-    <div className="min-h-screen bg-stone-100 dark:bg-stone-900 text-stone-900 dark:text-stone-100 pb-28"
-         style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
-      <div className="max-w-lg mx-auto px-5">
 
-        <header className="pt-8 pb-5">
-          <div className="flex justify-between items-center">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-stone-500 dark:text-stone-400 truncate">
+  return (
+    <div className="min-h-screen text-[var(--rotulo)] pb-32"
+         style={{ background: "var(--fundo)" }}>
+      <div className="max-w-lg mx-auto px-4">
+
+        <header className="pt-3">
+          <div className="flex justify-between items-center gap-3 min-h-[44px]">
+            <p className="text-[13px] text-[var(--rotulo-2)] truncate">
               {session.user.email}
             </p>
-            <div className="flex items-center gap-3 shrink-0">
-              {salvando && <span className="text-[10px] text-stone-400 dark:text-stone-500">salvando…</span>}
-              {!salvando && salvo && <span className="text-[10px] text-stone-400 dark:text-stone-500">salvo</span>}
+            <div className="flex items-center gap-1 shrink-0">
+              {salvando && <span className="text-[13px] text-[var(--rotulo-3)]">salvando…</span>}
+              {!salvando && salvo && <span className="text-[13px] text-[var(--rotulo-3)]">salvo</span>}
               <BotaoTema tema={tema} onAlternar={onAlternarTema} />
               <button onClick={() => supabase.auth.signOut()}
-                className="text-[10px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 underline focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-                sair
+                className="text-[17px] px-2 min-h-[44px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
+                Sair
               </button>
             </div>
           </div>
-          <div className="flex items-baseline justify-between mt-2">
-            <h1 className="text-3xl lowercase" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-              {m.nome} <span className="text-stone-400 dark:text-stone-500">{m.ano}</span>
+
+          {/* Large title do iOS, com a navegação de mês ao lado */}
+          <div className="flex items-end justify-between gap-3 pt-1 pb-4">
+            <h1 className="text-[34px] font-bold tracking-tight lowercase leading-none">
+              {m.nome} <span className="text-[var(--rotulo-3)] font-normal">{m.ano}</span>
             </h1>
-            <div className="flex gap-1">
+            <div className="flex gap-2 pb-1">
               <button onClick={() => setOffset(Math.max(-historico.length, pos - 1))}
                       disabled={pos <= -historico.length}
-                      className="w-9 h-9 border border-stone-300 dark:border-stone-700 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">←</button>
+                      aria-label="Mês anterior"
+                      className="w-9 h-9 rounded-full grid place-items-center bg-[var(--preenchido)] disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
+                <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden="true">
+                  <path d="M7.5 1L1.5 7.5L7.5 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
               <button onClick={() => setOffset(Math.min(meses.length - 1, pos + 1))}
                       disabled={pos >= meses.length - 1}
-                      className="w-9 h-9 border border-stone-300 dark:border-stone-700 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">→</button>
+                      aria-label="Próximo mês"
+                      className="w-9 h-9 rounded-full grid place-items-center bg-[var(--preenchido)] disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
+                <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden="true">
+                  <path d="M1.5 1L7.5 7.5L1.5 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
             </div>
           </div>
         </header>
 
         {!online && (
-          <div className="mb-4 border-l-2 border-stone-800 dark:border-stone-200 bg-stone-200 dark:bg-stone-800 px-3 py-2 text-sm">
+          <div className="mb-4 rounded-xl bg-[var(--cartao)] px-4 py-3 text-[13px] leading-snug">
             Sem internet. Dá para ver o caderno, mas o que você alterar agora
             não vai salvar até a conexão voltar.
           </div>
         )}
 
         {erro && (
-          <div className="mb-4 border-l-2 border-stone-800 dark:border-stone-200 bg-stone-200 dark:bg-stone-800 px-3 py-2 text-sm">
+          <div className="mb-4 rounded-xl bg-[var(--cartao)] px-4 py-3 text-[13px] leading-snug"
+               style={{ color: "var(--perigo)" }}>
             {erro}
           </div>
         )}
 
         {(emHistorico || emFuturo) && aba === "mes" && (
-          <div className="mb-4 border-l-2 border-stone-400 dark:border-stone-600 bg-stone-200 dark:bg-stone-800 px-3 py-2 text-sm">
-            <div className="flex justify-between items-center gap-3">
-              <span className="text-stone-600 dark:text-stone-300">
+          <div className="mb-4 rounded-xl bg-[var(--cartao)] px-4 py-3">
+            <div className="flex justify-between items-start gap-3">
+              <span className="text-[13px] text-[var(--rotulo-2)] leading-snug">
                 {emHistorico ? "Mês fechado" : "Mês futuro planejado"} — o que você lançar
                 aqui fica só nesse mês, sem mexer no atual.
               </span>
               <button onClick={() => setOffset(0)}
-                className="underline text-stone-800 dark:text-stone-200 shrink-0 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-                voltar
+                className="text-[13px] font-semibold shrink-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
+                Voltar
               </button>
             </div>
             {emFuturo && (
               <button onClick={() => setConfirmarApagar({ idx: idxFuturo, lista: "futuro" })}
-                className="mt-1 underline text-stone-500 dark:text-stone-400 text-xs focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-                descartar este planejamento
+                className="mt-2 text-[13px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]"
+                style={{ color: "var(--perigo)" }}>
+                Descartar este planejamento
               </button>
             )}
           </div>
         )}
 
-        <div className="flex gap-2 mb-6">
+        {/* Segmented control */}
+        <div className="flex gap-0.5 bg-[var(--preenchido)] rounded-lg p-0.5 mb-5">
           {[["mes", "o mês"], ["projecao", "projeção"], ["historico", "histórico"]].map(([k, r]) => (
             <button key={k} onClick={() => { setAba(k); setOffset(0); }}
               aria-current={aba === k ? "page" : undefined}
-              className={`flex-1 py-2.5 text-sm tracking-wide border focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300 ${
+              className={`flex-1 py-1.5 text-[13px] rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)] ${
                 aba === k
-                  ? "bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 border-stone-900 dark:border-stone-100"
-                  : "border-stone-400 dark:border-stone-600 text-stone-500 dark:text-stone-400"}`}>
+                  ? "bg-[var(--cartao)] font-semibold shadow-sm"
+                  : "text-[var(--rotulo-2)]"}`}>
               {r}
             </button>
           ))}
@@ -443,8 +460,6 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             />
           ) : (
             <AbaMes
-              // Num mês concreto os itens já trazem a parcela certa (offset 0);
-              // num mês calculado, conta a distância desde o último concreto.
               offset={registroEm(pos) ? 0 : pos - distanciaBase}
               totalMes={totalEm(pos)}
               somaFixosMes={fixosEm(pos)}
@@ -474,24 +489,25 @@ function CadernoContas({ session, tema, onAlternarTema }) {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-stone-100 dark:bg-stone-900 border-t border-stone-300 dark:border-stone-700"
-           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        <div className="max-w-lg mx-auto px-5 py-3 flex gap-3">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-[var(--separador)]"
+           style={{ background: "var(--fundo)", paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}>
+        <div className="max-w-lg mx-auto px-4 pt-3 flex gap-2.5">
           <button onClick={() => setForm({ tipo: "fixo", nome: "", valor: "", paga: 1, total: 3 })}
-            className="flex-1 bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 py-3 text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-            lançar conta
+            className="flex-1 py-3.5 rounded-xl text-[17px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--destaque)]"
+            style={{ background: "var(--destaque)", color: "var(--sobre-destaque)" }}>
+            Lançar conta
           </button>
           {emHistorico || emFuturo ? (
             <button onClick={() => setConfirmarAbrir(true)}
-              className="px-4 border border-stone-400 dark:border-stone-600 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-              abrir mês
+              className="px-5 py-3.5 rounded-xl text-[17px] bg-[var(--preenchido)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
+              Abrir mês
             </button>
           ) : (
             <button onClick={() => setConfirmarFechar(true)}
               disabled={pos !== 0}
               title={pos !== 0 ? "só dá pra fechar o mês atual" : undefined}
-              className="px-4 border border-stone-400 dark:border-stone-600 text-sm disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-              fechar mês
+              className="px-5 py-3.5 rounded-xl text-[17px] bg-[var(--preenchido)] disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
+              Fechar mês
             </button>
           )}
         </div>

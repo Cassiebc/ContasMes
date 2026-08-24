@@ -69,6 +69,7 @@ src/
     ModalFecharMes.jsx  confirmação de fechar
     ModalAbrirMes.jsx   confirmação de abrir
     ModalApagarMes.jsx  confirmação de apagar mês / descartar planejamento
+    AlertaIOS.jsx       caixa de confirmação no padrão do iOS
     BotaoTema.jsx       alterna claro/escuro
 public/
   manifest.json     standalone, portrait, ícones normais + maskable, screenshots
@@ -175,10 +176,38 @@ marca esses, e `carregar()` os apaga. Guardar um deles zeraria a projeção
 daquele mês e, num fechamento, apagaria as contas fixas — foi bug real duas
 vezes. Mês fechado vazio fica: "nesse mês não tive contas" é informação.
 
+## Visual
+
+Segue o Human Interface Guidelines da Apple, na variante sóbria: a estrutura
+e os padrões de interação são os do iOS, sem cor de marca. O destaque é o
+próprio contraste — preto no claro, branco no escuro — e cor fica reservada
+pra quando significa alguma coisa (vermelho em apagar).
+
+- **Cores** são tokens semânticos em `index.css`, nomeados pelo papel
+  (`--fundo`, `--cartao`, `--rotulo`, `--separador`, `--preenchido`,
+  `--destaque`). O tema escuro é só uma troca de valores em `.dark`; nenhum
+  componente conhece cor literal.
+- **Tipografia** é a do sistema (SF Pro no iPhone), na escala do HIG: 34px no
+  título do mês, 17px no corpo, 13px em rótulos e apoio.
+- **Listas** são o *inset grouped*: cartão com cantos, separador começando
+  alinhado ao texto (classe `.lista-ios`).
+- **Confirmações** usam `AlertaIOS` — caixa central, ação em negrito,
+  destrutiva em vermelho. O formulário é um *sheet* que sobe, com alça e
+  Cancelar/Salvar no topo.
+- Toda área de toque tem no mínimo 44&nbsp;pt, e a barra inferior respeita
+  `env(safe-area-inset-bottom)`.
+
+A identidade anterior (serif Georgia, bege de papel, cantos retos) saiu nessa
+troca. Se um dia voltar atrás, o que muda é só o bloco de tokens e as classes
+dos componentes — a lógica não conhece nada disso.
+
+## Tema claro/escuro
+
 ## Tema claro/escuro
 
 `lib/tema.js` lê a preferência salva em `localStorage` (ou a do sistema),
-alterna a classe `dark` no `<html>` e atualiza o `theme-color` do PWA.
+alterna a classe `dark` no `<html>` e atualiza o `theme-color` do PWA
+(`#F2F2F7` no claro, `#000000` no escuro).
 
 Dois detalhes que quebram fácil se mexerem sem saber:
 

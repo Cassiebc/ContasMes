@@ -1,28 +1,19 @@
 import { brl } from "../lib/caderno";
+import AlertaIOS from "./AlertaIOS";
 
 export default function ModalApagarMes({ mes, ano, total, planejado = false, onConfirmar, onCancelar }) {
   return (
-    <div className="fixed inset-0 bg-stone-900 bg-opacity-40 flex items-end sm:items-center justify-center z-10">
-      <div className="bg-stone-100 dark:bg-stone-900 dark:text-stone-100 w-full max-w-lg p-5">
-        <h2 className="text-xl lowercase mb-3" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-          {planejado ? "descartar" : "apagar"} {mes} {ano}?
-        </h2>
-        <p className="text-sm text-stone-600 dark:text-stone-300 mb-5">
-          {planejado
-            ? `O planejamento desse mês, com ${brl(total)} em lançamentos, é descartado. ${mes} volta a aparecer na projeção calculada a partir do mês atual.`
-            : `Esse mês fechado, com ${brl(total)} em lançamentos, sai do histórico de vez. O mês atual e os outros meses não mudam.`}
-        </p>
-        <div className="flex gap-3">
-          <button onClick={onConfirmar}
-            className="flex-1 bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-            {planejado ? "descartar" : "apagar"}
-          </button>
-          <button onClick={onCancelar}
-            className="px-5 border border-stone-400 dark:border-stone-600 text-sm focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-            cancelar
-          </button>
-        </div>
-      </div>
-    </div>
+    <AlertaIOS
+      titulo={`${planejado ? "Descartar" : "Apagar"} ${mes} ${ano}?`}
+      texto={
+        planejado
+          ? `O planejamento desse mês, com ${brl(total)} em lançamentos, é descartado. ${mes} volta a aparecer na projeção calculada a partir do mês atual.`
+          : `Esse mês fechado, com ${brl(total)} em lançamentos, sai do histórico de vez. O mês atual e os outros meses não mudam.`
+      }
+      acao={planejado ? "Descartar" : "Apagar"}
+      destrutiva
+      onConfirmar={onConfirmar}
+      onCancelar={onCancelar}
+    />
   );
 }
