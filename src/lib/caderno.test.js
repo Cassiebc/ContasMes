@@ -1,5 +1,30 @@
 import { describe, it, expect } from "vitest";
-import { faltam, ativoEm, rotuloMes, fecharMes } from "./caderno";
+import { faltam, ativoEm, rotuloMes, fecharMes, semPlanejamentoVazio } from "./caderno";
+
+describe("semPlanejamentoVazio", () => {
+  const comItens = (mes) => ({ mesBase: mes, anoBase: 2026, itens: [{ id: "1", nome: "x", valor: 10, tipo: "fixo" }] });
+  const vazio = (mes) => ({ mesBase: mes, anoBase: 2026, itens: [] });
+
+  it("tira os meses planejados sem lançamento", () => {
+    expect(semPlanejamentoVazio([vazio(8), comItens(9)])).toEqual([comItens(9)]);
+  });
+
+  it("mantém a ordem dos que sobram", () => {
+    const r = semPlanejamentoVazio([comItens(8), vazio(9), comItens(10)]);
+    expect(r.map((m) => m.mesBase)).toEqual([8, 10]);
+  });
+
+  it("não mexe quando nenhum está vazio", () => {
+    const lista = [comItens(8), comItens(9)];
+    expect(semPlanejamentoVazio(lista)).toEqual(lista);
+  });
+
+  it("aguenta lista vazia, undefined e item malformado", () => {
+    expect(semPlanejamentoVazio([])).toEqual([]);
+    expect(semPlanejamentoVazio(undefined)).toEqual([]);
+    expect(semPlanejamentoVazio([null, { mesBase: 1 }])).toEqual([]);
+  });
+});
 
 describe("faltam", () => {
   it("fixo nunca termina", () => {

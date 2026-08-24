@@ -29,6 +29,16 @@ export const rotuloMes = (base, ano, offset) => {
   return { nome: MESES[i], ano: a };
 };
 
+// Um mês planejado sem nenhum lançamento não guarda informação: "outubro
+// planejado, vazio" e "outubro ainda não planejado" dizem a mesma coisa. Só
+// que o registro vazio atrapalha — zera a projeção daquele mês e, ao ser
+// adotado num fechamento, apagaria as contas fixas. Eles aparecem sozinhos
+// (o "abrir mês" empurra pra frente meses que estavam vazios), então some-se
+// com eles na entrada e na saída, em vez de exigir que o usuário perceba e
+// limpe na mão.
+export const semPlanejamentoVazio = (futuro) =>
+  (Array.isArray(futuro) ? futuro : []).filter((m) => m?.itens?.length > 0);
+
 // Avança todas as parcelas em 1, remove as que chegaram ao fim e vira o mês base.
 export const fecharMes = ({ itens, mesBase, anoBase }) => {
   const novosItens = itens

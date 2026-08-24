@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
-import { MESES, novoCaderno, ativoEm, faltam, rotuloMes, fecharMes } from "./lib/caderno";
+import { MESES, novoCaderno, ativoEm, faltam, rotuloMes, fecharMes, semPlanejamentoVazio } from "./lib/caderno";
 import { useTema } from "./lib/tema.js";
 import AbaMes from "./components/AbaMes.jsx";
 import AbaProjecao from "./components/AbaProjecao.jsx";
@@ -92,7 +92,18 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             ? [{ ...data.dados_anterior, fechadoEm: null }]
             : hist
         );
-        setFuturo(Array.isArray(data.futuro) ? data.futuro : []);
+        // Limpa planejamentos vazios que tenham sobrado de versões
+        // anteriores, e grava a limpeza pra não repetir a cada abertura.
+        const futuroBruto = Array.isArray(data.futuro) ? data.futuro : [];
+        const futuroLimpo = semPlanejamentoVazio(futuroBruto);
+        setFuturo(futuroLimpo);
+        if (futuroLimpo.length !== futuroBruto.length) {
+          supabase
+            .from("cadernos")
+            .update({ futuro: futuroLimpo })
+            .eq("user_id", session.user.id)
+            .then(() => {});
+        }
       } else {
         // Primeiro acesso: cria um caderno vazio no mês corrente.
         const inicial = novoCaderno();
@@ -333,15 +344,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
       { mesBase, anoBase, itens, fechadoEm: new Date().toISOString() },
     ];
 
-    // Planejamento sem nenhum lançamento não diz nada, e adotá-lo como o
-    // novo mês faria as contas fixas sumirem sem aviso. Esses são
-    // descartados (não há o que perder num registro vazio) e o mês avança
-    // normalmente: fixos seguem, parcelas andam uma casa.
-    let restoFuturo = futuro;
-    while (restoFuturo.length > 0 && restoFuturo[0].itens.length === 0) {
-      restoFuturo = restoFuturo.slice(1);
-    }
-
+    let restoFuturo = semPlanejamentoVazio(futuro);
     const proximo = restoFuturo[0];
     const novoAtual = proximo ? proximo : { ...dados, ...fecharMes(dados) };
     if (proximo) restoFuturo = restoFuturo.slice(1);
@@ -368,6 +371,9 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     } else {
       return;
     }
+    // Mês vazio empurrado pra frente não vira planejamento — é assim que o
+    // registro vazio aparecia e passava a atrapalhar os meses seguintes.
+    novoFuturo = semPlanejamentoVazio(novoFuturo);
     const ok = await salvar(novoDados, { historico: novoHistorico, futuro: novoFuturo });
     if (ok) { setHistorico(novoHistorico); setFuturo(novoFuturo); }
     setOffset(0);
