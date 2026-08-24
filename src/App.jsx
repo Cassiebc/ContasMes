@@ -332,14 +332,22 @@ function CadernoContas({ session, tema, onAlternarTema }) {
       ...historico,
       { mesBase, anoBase, itens, fechadoEm: new Date().toISOString() },
     ];
-    if (futuro.length > 0) {
-      const [proximo, ...restoFuturo] = futuro;
-      const ok = await salvar(proximo, { historico: novoHistorico, futuro: restoFuturo });
-      if (ok) { setHistorico(novoHistorico); setFuturo(restoFuturo); }
-    } else {
-      const ok = await salvar({ ...dados, ...fecharMes(dados) }, { historico: novoHistorico });
-      if (ok) setHistorico(novoHistorico);
+
+    // Planejamento sem nenhum lançamento não diz nada, e adotá-lo como o
+    // novo mês faria as contas fixas sumirem sem aviso. Esses são
+    // descartados (não há o que perder num registro vazio) e o mês avança
+    // normalmente: fixos seguem, parcelas andam uma casa.
+    let restoFuturo = futuro;
+    while (restoFuturo.length > 0 && restoFuturo[0].itens.length === 0) {
+      restoFuturo = restoFuturo.slice(1);
     }
+
+    const proximo = restoFuturo[0];
+    const novoAtual = proximo ? proximo : { ...dados, ...fecharMes(dados) };
+    if (proximo) restoFuturo = restoFuturo.slice(1);
+
+    const ok = await salvar(novoAtual, { historico: novoHistorico, futuro: restoFuturo });
+    if (ok) { setHistorico(novoHistorico); setFuturo(restoFuturo); }
     setOffset(0);
     setConfirmarFechar(false);
   };
