@@ -48,3 +48,33 @@ antes de escrever o código que depende da coluna nova.
 existe banco de desenvolvimento separado: testes end-to-end usam o Supabase de
 produção. Combine com a usuária antes de criar conta de teste, e avise que ela
 precisará apagá-la depois pelo painel (a chave publishable não remove usuário).
+
+**O banco é `meses` + `lancamentos`, não mais um jsonb.** Todo acesso passa
+por `src/lib/repositorio.js`; `App.jsx` não fala com o Supabase direto. A
+tabela `cadernos` continua no banco com os dados no formato antigo, como rede
+de segurança, e o repositório migra sozinho na primeira abertura de quem ainda
+não migrou — não apague essa tabela sem combinar.
+
+**Mês à frente sem lançamento não é planejamento.** Guardar esse registro
+zerava a projeção daquele mês e, num fechamento, apagava as contas fixas — foi
+bug real duas vezes. `carregar()` descarta esses meses. Mês *fechado* vazio
+fica: "nesse mês não tive contas" é informação de verdade.
+
+**Bugs de consistência vinham de regra espalhada.** Cada operação cuidava da
+sua parte e bastava uma esquecer. Hoje o banco recusa dado incoerente
+(constraints) e a tela relê o caderno depois de cada escrita, em vez de manter
+uma cópia própria. Ao mexer aqui, mantenha as duas coisas: regra no banco
+quando der, e uma leitura só como fonte de verdade.
+
+## Como testar de verdade
+
+`npm test` cobre só as funções puras. O que pegou os bugs desta semana foram
+testes de ponta a ponta com Playwright, dirigindo o app real contra o Supabase
+e conferindo o banco a cada passo — vale reproduzir o fluxo relatado antes de
+supor a causa. Cenários que já quebraram e valem revisitar:
+
+- fechar mês com um planejamento vazio à frente (as contas fixas sumiam);
+- lançar parcela num mês, abrir um mês anterior e conferir a projeção (a
+  parcela sumia dos meses seguintes);
+- restaurar backup por cima de um caderno diferente (mês duplicava);
+- apagar o último lançamento de um mês planejado (o mês zerava a projeção).

@@ -14,19 +14,27 @@ a mesma lista no iPhone e no computador.
    você não vai precisar dela no dia a dia) e a região `South America (São Paulo)`
 3. Espere uns 2 minutos enquanto ele provisiona
 
-## 2. Criar a tabela
+## 2. Criar as tabelas
 
 No menu lateral, **SQL Editor** → **New query**. Cole todo o conteúdo do
-arquivo `schema.sql` que está nesta pasta e clique em **Run**.
+arquivo `schema-v2.sql` que está nesta pasta e clique em **Run**.
 
-Isso cria a tabela `cadernos` e liga o Row Level Security — as quatro políticas
-garantem, **no banco**, que ninguém lê nem escreve na linha de outra pessoa.
-Não é uma checagem do frontend que dá para burlar pelo DevTools.
+Isso cria as tabelas `meses` e `lancamentos` e liga o Row Level Security — as
+políticas garantem, **no banco**, que ninguém lê nem escreve os dados de outra
+pessoa. Não é uma checagem do frontend que dá para burlar pelo DevTools.
 
-> Se o banco já existe e você só quer aplicar uma coluna nova, rode apenas as
-> linhas `alter table ... add column if not exists` do `schema.sql`. Rodar o
-> arquivo inteiro de novo dá erro nos `create policy`, que não aceitam
-> "se não existir".
+O arquivo também põe no banco as regras que antes só o código tentava
+lembrar: um mês não pode se repetir, só existe um mês atual por pessoa, uma
+parcela nunca é "5 de 3" e valor tem que ser positivo. Se algo tentar gravar
+fora disso, o banco recusa.
+
+Pode rodar o arquivo mais de uma vez sem quebrar nada.
+
+> O `schema.sql` (sem o `-v2`) é do formato antigo, que guardava o caderno
+> inteiro num campo JSON. Ficou no repositório só como referência — não é mais
+> preciso rodar. Quem já usava esse formato não precisa fazer nada: o app leva
+> os dados para as tabelas novas sozinho, na primeira vez que abre, e a tabela
+> antiga continua no banco intacta.
 
 ## 3. Pegar as chaves
 
@@ -139,8 +147,9 @@ lá), fechar o mês simplesmente adota esse planejamento em vez de recalcular.
 Fechou um mês por engano, ou quer voltar a trabalhar num mês anterior? Navegue
 até ele e toque em **abrir mês**: ele volta a ser o mês atual.
 
-Os meses que ficavam depois dele não são perdidos — viram "meses futuros
-planejados", continuam lá e continuam editáveis. É só uma reordenação.
+Os meses que ficavam depois dele não são perdidos — passam a contar como
+"meses futuros planejados", continuam lá e continuam editáveis. Nada é movido
+nem apagado: só muda qual mês é considerado o atual.
 
 ### Tema claro/escuro
 
@@ -178,9 +187,13 @@ tela carregada, mas não consegue salvar — e um aviso aparece avisando disso.
 ## Segurança
 
 O isolamento entre usuários é feito pelo Row Level Security do Postgres, no
-banco — não por checagem no navegador. Auditado: tentar ler ou escrever na
-linha de outra pessoa retorna vazio ou erro 403, mesmo com a chave pública em
+banco — não por checagem no navegador. Auditado: tentar ler ou escrever os
+dados de outra pessoa retorna vazio ou erro 403, mesmo com a chave pública em
 mãos.
+
+O banco também recusa dado incoerente (mês repetido, dois meses atuais,
+parcela impossível, valor negativo), em vez de confiar que o app vai lembrar
+de conferir.
 
 O `vercel.json` também define cabeçalhos de segurança (CSP, proteção contra
 clickjacking, entre outros). Se você mexer no script de tema dentro do

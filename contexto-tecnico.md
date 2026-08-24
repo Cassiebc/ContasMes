@@ -1,7 +1,7 @@
 # Caderno de Contas — contexto técnico
 
 Documento de contexto para retomar o projeto em novas sessões.
-Última atualização: 2026-08-21.
+Última atualização: 2026-08-24.
 
 ## O que é
 
@@ -57,6 +57,7 @@ src/
     caderno.test.js testes da regra de negócio
     repositorio.js  todo o acesso ao banco; a tela não conhece SQL
     tema.js         hook useTema (claro/escuro + persistência)
+    atualizacao.js  detecta versão nova publicada e recarrega o app
   components/
     AbaMes.jsx          o mês atual (ou projeção calculada)
     AbaMesHistorico.jsx um mês concreto de historico/futuro
@@ -67,6 +68,7 @@ src/
     FormConta.jsx       modal de lançar/editar
     ModalFecharMes.jsx  confirmação de fechar
     ModalAbrirMes.jsx   confirmação de abrir
+    ModalApagarMes.jsx  confirmação de apagar mês / descartar planejamento
     BotaoTema.jsx       alterna claro/escuro
 public/
   manifest.json     standalone, portrait, ícones normais + maskable, screenshots
@@ -245,6 +247,28 @@ CSP em `vercel.json` — senão o app carrega mas nenhuma requisição passa.
 - **iPhone**: abrir a URL no Safari (Chrome no iOS não oferece a opção) →
   compartilhar → "Adicionar à Tela de Início".
 - **Android**: Chrome mostra prompt de instalação ou menu ⋮ → "Instalar app".
+
+## Como testar
+
+`npm test` (Vitest) cobre só as funções puras de `lib/caderno.js` — cálculo de
+parcela, virada de mês, rótulo do mês. É rápido e vale rodar sempre, mas
+**nenhum dos bugs de consistência foi pego por ele**.
+
+O que pegou foi teste de ponta a ponta: Playwright dirigindo o app real contra
+o Supabase, conferindo o banco a cada passo. Vale reproduzir o fluxo relatado
+antes de supor a causa — várias vezes a suspeita inicial estava errada, e o
+que parecia um bug era efeito colateral de uma correção anterior.
+
+Cenários que já quebraram, e por isso valem revisitar ao mexer na linha do
+tempo:
+
+- fechar mês com um planejamento vazio à frente → as contas fixas sumiam;
+- lançar parcela num mês e depois abrir um mês anterior → a parcela sumia da
+  projeção dos meses seguintes;
+- restaurar backup por cima de um caderno diferente → o mês duplicava;
+- apagar o último lançamento de um mês planejado → aquele mês zerava;
+- migração rodando duas vezes ao mesmo tempo (o efeito roda duas vezes em
+  desenvolvimento, ou o app está aberto em duas abas).
 
 ## Observação sobre continuidade
 
