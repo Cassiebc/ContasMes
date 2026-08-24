@@ -1,6 +1,6 @@
 import { brl, MESES } from "../lib/caderno";
 
-export default function AbaHistorico({ historico, onVerMes }) {
+export default function AbaHistorico({ historico, onVerMes, onApagarMes }) {
   if (historico.length === 0) {
     return (
       <div className="border border-stone-300 dark:border-stone-700 border-dashed p-6 text-center">
@@ -23,18 +23,29 @@ export default function AbaHistorico({ historico, onVerMes }) {
       {ordenado.map(([h, idx]) => {
         const totalMes = h.itens.reduce((s, it) => s + it.valor, 0);
         return (
-          <button key={idx} onClick={() => onVerMes(idx)}
-            className="w-full flex justify-between items-baseline py-3 border-b border-stone-300 dark:border-stone-700 text-left focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
-            <span className="lowercase text-sm flex items-center gap-2">
-              <span className="text-stone-400 dark:text-stone-500">›</span>
-              {MESES[h.mesBase]} <span className="text-stone-400 dark:text-stone-500">{h.anoBase}</span>
-            </span>
-            <span className="tabular-nums" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
-              {brl(totalMes)}
-            </span>
-          </button>
+          <div key={idx} className="flex items-baseline gap-2 border-b border-stone-300 dark:border-stone-700">
+            <button onClick={() => onVerMes(idx)}
+              className="flex-1 flex justify-between items-baseline py-3 text-left focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
+              <span className="lowercase text-sm flex items-center gap-2">
+                <span className="text-stone-400 dark:text-stone-500">›</span>
+                {MESES[h.mesBase]} <span className="text-stone-400 dark:text-stone-500">{h.anoBase}</span>
+              </span>
+              <span className="tabular-nums" style={{ fontFamily: "ui-serif, Georgia, serif" }}>
+                {brl(totalMes)}
+              </span>
+            </button>
+            <button onClick={() => onApagarMes(idx)}
+              aria-label={`Apagar ${MESES[h.mesBase]} de ${h.anoBase} do histórico`}
+              className="text-stone-400 dark:text-stone-500 px-1 shrink-0 focus:outline-none focus:ring-2 focus:ring-stone-800 dark:focus:ring-stone-300">
+              ×
+            </button>
+          </div>
         );
       })}
+      <p className="text-xs text-stone-500 dark:text-stone-400 pt-3">
+        Toque num mês para abri-lo. O × apaga o mês do histórico — útil se o
+        mesmo mês aparecer repetido aqui.
+      </p>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import AbaHistorico from "./components/AbaHistorico.jsx";
 import AbaMesHistorico from "./components/AbaMesHistorico.jsx";
 import ModalFecharMes from "./components/ModalFecharMes.jsx";
 import ModalAbrirMes from "./components/ModalAbrirMes.jsx";
+import ModalApagarMes from "./components/ModalApagarMes.jsx";
 import FormConta from "./components/FormConta.jsx";
 import BotaoTema from "./components/BotaoTema.jsx";
 
@@ -52,6 +53,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const [form, setForm] = useState(null);
   const [confirmarFechar, setConfirmarFechar] = useState(false);
   const [confirmarAbrir, setConfirmarAbrir] = useState(false);
+  const [confirmarApagar, setConfirmarApagar] = useState(null);
   const [historico, setHistorico] = useState([]);
   const [futuro, setFuturo] = useState([]);
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -261,6 +263,15 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     salvarFuturo(novoFuturo);
   };
 
+  // Apaga um mês fechado inteiro. Serve pra limpar um mês repetido, que é o
+  // que sobra de um caderno restaurado por cima de outro.
+  const apagarMesDoHistorico = async () => {
+    const idx = confirmarApagar.idx;
+    const novoHistorico = historico.filter((_, i) => i !== idx);
+    await salvarHistorico(novoHistorico);
+    setConfirmarApagar(null);
+  };
+
   const gravarForm = () => {
     const nome = (form.nome || "").trim();
     const valor = parseFloat(String(form.valor).replace(",", "."));
@@ -344,8 +355,12 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     setConfirmarAbrir(false);
   };
 
+  // Salva o caderno inteiro — mês atual, meses fechados e meses planejados.
+  // Antes só o mês atual ia no arquivo, e restaurar por cima de um histórico
+  // existente duplicava o mês.
   const exportar = () => {
-    const blob = new Blob([JSON.stringify(dados, null, 2)], { type: "application/json" });
+    const caderno = { versao: 2, dados, historico, futuro };
+    const blob = new Blob([JSON.stringify(caderno, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -381,15 +396,35 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     URL.revokeObjectURL(url);
   };
 
+  // Restaurar troca o caderno INTEIRO pelo do arquivo. Substituir só o mês
+  // atual, como era antes, deixava o histórico antigo no lugar e podia
+  // acabar com o mesmo mês aparecendo duas vezes na linha do tempo.
   const importar = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
-        const novo = JSON.parse(reader.result);
-        if (!Array.isArray(novo.itens)) throw new Error();
-        salvar(novo);
+        const lido = JSON.parse(reader.result);
+        let novoDados, novoHistorico, novoFuturo;
+
+        if (lido && lido.dados && Array.isArray(lido.dados.itens)) {
+          // Formato novo: caderno completo.
+          novoDados = lido.dados;
+          novoHistorico = Array.isArray(lido.historico) ? lido.historico : [];
+          novoFuturo = Array.isArray(lido.futuro) ? lido.futuro : [];
+        } else if (lido && Array.isArray(lido.itens)) {
+          // Formato antigo: só o mês. Restaura ele como o caderno todo, em
+          // vez de encaixar num histórico com o qual ele pode não combinar.
+          novoDados = lido;
+          novoHistorico = [];
+          novoFuturo = [];
+        } else {
+          throw new Error("formato desconhecido");
+        }
+
+        const ok = await salvar(novoDados, { historico: novoHistorico, futuro: novoFuturo });
+        if (ok) { setHistorico(novoHistorico); setFuturo(novoFuturo); }
         setOffset(0);
       } catch {
         setErro("Esse arquivo não é um backup do Caderno. Escolha o .json que você baixou daqui.");
@@ -526,6 +561,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
           <AbaHistorico
             historico={historico}
             onVerMes={(idx) => { setOffset(idx - historico.length); setAba("mes"); }}
+            onApagarMes={(idx) => setConfirmarApagar({ idx })}
           />
         )}
       </div>
@@ -569,6 +605,16 @@ function CadernoContas({ session, tema, onAlternarTema }) {
           mesAtual={rotuloMes(mesBase, anoBase, 0).nome}
           onConfirmar={abrirMes}
           onCancelar={() => setConfirmarAbrir(false)}
+        />
+      )}
+
+      {confirmarApagar && historico[confirmarApagar.idx] && (
+        <ModalApagarMes
+          mes={MESES[historico[confirmarApagar.idx].mesBase]}
+          ano={historico[confirmarApagar.idx].anoBase}
+          total={historico[confirmarApagar.idx].itens.reduce((s, i) => s + i.valor, 0)}
+          onConfirmar={apagarMesDoHistorico}
+          onCancelar={() => setConfirmarApagar(null)}
         />
       )}
 

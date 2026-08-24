@@ -46,9 +46,10 @@ export default function AbaProjecao({ resumos, onExportar, onExportarCsv, onImpo
           <input type="file" accept="application/json" className="hidden" onChange={onImportar} />
         </label>
         <p className="text-xs text-stone-500 dark:text-stone-400 mt-2">
-          Os dados já ficam salvos no servidor. O JSON serve para
-          restaurar aqui mesmo; o CSV é só para abrir em planilha —
-          restaurar só aceita o formato JSON.
+          Os dados já ficam salvos no servidor. O JSON guarda o caderno
+          inteiro — mês atual, meses fechados e planejados — e restaurar
+          troca tudo pelo que estiver no arquivo. O CSV é só para abrir em
+          planilha; restaurar não aceita ele.
         </p>
       </div>
     </div>
