@@ -24,13 +24,14 @@ sessão, clonar/atualizar o repositório e trabalhar a partir dele, em vez de
 assumir um caminho fixo.
 
 Fluxo de trabalho: commits vão para `dev`, são testados, e só então `dev` é
-mesclada em `main`.
+mesclada em `main` — por pull request, porque a `main` é protegida (veja
+"Licença e código aberto").
 
-**Dar push em `main` publica em produção.** O projeto na Vercel está ligado ao
-repositório no GitHub, então todo push nessa branch dispara um deploy sozinho
-(dá pra confirmar pela URL `cadernocontas-git-main-*` nos deploys). Push em
-`dev` não publica. `vercel --prod` continua funcionando para publicar à mão,
-mas não é necessário.
+**Mesclar na `main` publica em produção.** O projeto na Vercel está ligado ao
+repositório no GitHub, então toda mudança nessa branch dispara um deploy
+sozinho (dá pra confirmar pela URL `cadernocontas-git-main-*` nos deploys).
+Push em `dev` não publica. `vercel --prod` continua funcionando para publicar
+à mão, mas não é necessário.
 
 ## Stack
 
@@ -383,9 +384,11 @@ conteúdo para o navegador sequer perceber.
 
 ## Deploy
 
-**O jeito normal é dar push em `main`** — a Vercel está ligada ao GitHub e
-publica sozinha, em poucos segundos. `vercel --prod` continua funcionando pra
-publicar à mão, mas não é necessário.
+**O jeito normal é abrir um PR de `dev` para `main` e mesclar** — push direto
+na `main` é recusado desde que o repositório virou público e o ruleset
+`protecao-main` passou a valer. Mesclado o PR, a Vercel publica sozinha, em
+poucos segundos. `vercel --prod` continua funcionando pra publicar à mão, mas
+não é necessário.
 
 As duas variáveis (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) precisam
 estar cadastradas em Settings → Environment Variables no painel da Vercel, e o
@@ -519,13 +522,16 @@ de segurança, e vale entender por quê antes de mexer aqui:
   produção.
 
 O que muda com o código aberto é só isto: fork não toca neste repositório, e
-pull request não publica nada — só push em `main` publica, e só a dona da
-conta dá push em `main`. O caminho realista para um deploy ruim continua sendo
+pull request de fora não publica nada — publicar exige mesclar na `main`, e só
+a dona da conta faz isso. O caminho realista para um deploy ruim continua sendo
 mesclar um PR sem ler.
 
-**Pendente:** ligar a proteção da branch `main` no GitHub (exigir PR, bloquear
-force push). Não dá para fazer daqui — o `gh` não está instalado nas máquinas
-usadas — então é pelo painel: Settings → Branches (ou Rules → Rulesets).
+A `main` é protegida pelo ruleset `protecao-main`, criado em 2026-08-25: exige
+pull request, bloqueia force push e impede apagar a branch (confirmado pela API
+pública — `pull_request`, `non_fast_forward`, `deletion`). Ele só passou a
+valer quando o repositório virou público: ruleset em repositório privado exige
+plano pago, e fica salvo mas sem efeito. Mexer nisso é pelo painel do GitHub —
+o `gh` não está instalado nas máquinas usadas.
 
 Sobre autoria: o código é escrito com assistência do Claude Code, e isso está
 registrado no README e nos trailers `Co-Authored-By` dos commits. A

@@ -104,17 +104,23 @@ no painel da Vercel: projeto → **Settings** → **Environment Variables** →
 `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. Depois rode `vercel --prod`
 mais uma vez, para que o build enxergue as variáveis.
 
-### Depois disso, publicar é dar push
+### Depois disso, publicar é mesclar na `main`
 
 Com o projeto ligado ao GitHub, a Vercel publica sozinha:
 
 | você faz | acontece |
 | --- | --- |
-| push em `main` | **publica em produção**, em poucos segundos |
+| mescla um PR na `main` | **publica em produção**, em poucos segundos |
 | push em `dev` | gera um Preview, protegido por login da Vercel |
 
-Ou seja: **"dar push em `main`" e "publicar" são a mesma decisão.** Não existe
+Ou seja: **"mesclar na `main`" e "publicar" são a mesma decisão.** Não existe
 passo de confirmação depois.
+
+Neste repositório a `main` é protegida por um ruleset: push direto nela é
+recusado, e force push e apagar a branch também. O caminho é abrir um pull
+request de `dev` para `main`. Num fork seu essa proteção não existe até você
+criar a sua — regra de branch é configuração do repositório, não vem no
+código.
 
 O Preview do `dev` fica num endereço fixo, que sempre aponta para o topo da
 branch — dá para testar ali antes de publicar. Só lembre que ele usa **o mesmo
