@@ -1,7 +1,7 @@
 # Caderno de Contas — contexto técnico
 
 Documento de contexto para retomar o projeto em novas sessões.
-Última atualização: 2026-08-24.
+Última atualização: 2026-08-25.
 
 Se você é uma sessão nova: leia este arquivo inteiro antes de mexer em
 qualquer coisa. Várias decisões aqui parecem estranhas e são deliberadas —
@@ -494,6 +494,43 @@ combinar antes):
   repetível;
 - contas de teste criadas para os e2e — só a usuária remove, pelo painel do
   Supabase.
+
+## Licença e código aberto
+
+O projeto é licenciado sob **MIT** desde 2026-08-25 — o texto está em
+`LICENSE`, na raiz, com o copyright em nome de Bruna Cássia dos Santos
+Simões. A escolha foi deliberada: MIT é a licença de toda a stack do projeto
+(React, Vite, Tailwind, `supabase-js`), é curta o bastante para ser lida, e a
+cláusula de ausência de garantia importa num app que projeta contas a pagar.
+AGPL foi considerada e descartada — protege contra um cenário que não se
+aplica a um projeto pessoal e afasta contribuidor casual.
+
+O repositório era privado até essa data. Abrir o código **não** muda o modelo
+de segurança, e vale entender por quê antes de mexer aqui:
+
+- a chave que vai no bundle é publishable/anon, **pública por design**; quem
+  abre o DevTools em produção já a tem;
+- quem protege os dados é o RLS do Postgres, aplicado no banco, não a
+  obscuridade do `schema-v2.sql`;
+- não há segredo no histórico do Git — conferido commit a commit; `.env` e
+  `.env*` estão no `.gitignore`, e o `.env.example` só tem placeholder;
+- o único identificador exposto é a ref do projeto Supabase no `connect-src`
+  da CSP em `vercel.json`, que já vai no cabeçalho de todo response em
+  produção.
+
+O que muda com o código aberto é só isto: fork não toca neste repositório, e
+pull request não publica nada — só push em `main` publica, e só a dona da
+conta dá push em `main`. O caminho realista para um deploy ruim continua sendo
+mesclar um PR sem ler.
+
+**Pendente:** ligar a proteção da branch `main` no GitHub (exigir PR, bloquear
+force push). Não dá para fazer daqui — o `gh` não está instalado nas máquinas
+usadas — então é pelo painel: Settings → Branches (ou Rules → Rulesets).
+
+Sobre autoria: o código é escrito com assistência do Claude Code, e isso está
+registrado no README e nos trailers `Co-Authored-By` dos commits. A
+titularidade é da usuária: ferramenta não é autora, e o crédito de quem
+participou de cada mudança vive no histórico, não na licença.
 
 ## Observação sobre continuidade
 

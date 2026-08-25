@@ -242,3 +242,44 @@ O `vercel.json` também define cabeçalhos de segurança (CSP, proteção contra
 clickjacking, entre outros). Se você mexer no script de tema dentro do
 `index.html`, precisa recalcular o hash dele na CSP — há um comentário no
 próprio arquivo lembrando disso.
+
+---
+
+## Licença
+
+Este projeto é software livre, sob a licença **MIT** — o texto completo está
+em `LICENSE`, na raiz.
+
+Na prática: você pode usar, copiar, modificar e distribuir o código, inclusive
+comercialmente, sem pedir permissão. A única exigência é manter o aviso de
+copyright junto. E, como toda licença permissiva, ela vem sem garantia: o
+software é fornecido "como está", e quem o usa assume o risco — vale lembrar
+que aqui se trata de projeção de contas a pagar, não de contabilidade
+auditada.
+
+## Se você clonou este repositório
+
+O app não vem com banco: cada instalação usa **o seu próprio projeto no
+Supabase**, criado pelos passos 1 a 4 acima. Nada aqui aponta para o banco de
+ninguém — a chave que vai no `.env` é a sua.
+
+O mesmo vale para os testes de ponta a ponta: as variáveis `E2E_*` precisam
+apontar para o seu projeto, e eles apagam e recriam os meses do usuário de
+teste. Detalhes em `e2e/README.md`.
+
+Correções e sugestões são bem-vindas por issue ou pull request.
+
+## Como este projeto foi feito
+
+O código foi escrito com a ajuda do **Claude Code**, a ferramenta de
+programação assistida por IA da Anthropic. A direção do projeto é humana: as
+decisões de arquitetura, o formato do código, os testes, a revisão de cada
+mudança e a definição do que é bug e do que é comportamento desejado são de
+Bruna Cássia dos Santos Simões.
+
+Fica registrado aqui por transparência, e porque explica um traço do
+repositório: as mensagens de commit são longas de propósito, contando o
+*porquê* de cada mudança, e o `contexto-tecnico.md` existe para que qualquer
+pessoa — ou qualquer sessão nova de IA — retome o projeto sem repetir erros já
+resolvidos. Várias decisões que parecem estranhas são deliberadas, e o
+documento diz quais e por quê.
