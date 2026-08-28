@@ -1,15 +1,17 @@
 import Secao from "./Secao";
 import CardTotal from "./CardTotal";
+import { ehAVista } from "../lib/caderno";
 
 export default function AbaMes({
   offset,
-  totalMes, somaFixosMes, somaParcelasMes,
+  totalMes, somaFixosMes, somaParcelasMes, somaAVistaMes,
   itensDoMes, onEditar, onRemover,
   nomeDoMes, passado = false,
 }) {
   return (
     <>
-      <CardTotal total={totalMes} fixos={somaFixosMes} parcelado={somaParcelasMes} />
+      <CardTotal total={totalMes} fixos={somaFixosMes} parcelado={somaParcelasMes}
+                 aVista={somaAVistaMes} />
 
       {itensDoMes.length === 0 ? (
         <div className="bg-[var(--cartao)] rounded-xl px-5 py-8 text-center">
@@ -28,7 +30,7 @@ export default function AbaMes({
               <>
                 Toque em <span className="text-[var(--rotulo)]">lançar conta</span> para
                 começar. Contas de todo mês entram como fixas; compras no cartão,
-                como parceladas.
+                como parceladas; o que você paga de uma vez só, como à vista.
               </>
             )}
           </p>
@@ -40,7 +42,11 @@ export default function AbaMes({
             onEditar={onEditar} onRemover={onRemover} offset={offset} />
 
           <Secao titulo="parcelado"
-            itens={itensDoMes.filter((i) => i.tipo === "parcelado")}
+            itens={itensDoMes.filter((i) => i.tipo === "parcelado" && !ehAVista(i))}
+            onEditar={onEditar} onRemover={onRemover} offset={offset} />
+
+          <Secao titulo="à vista"
+            itens={itensDoMes.filter(ehAVista)}
             onEditar={onEditar} onRemover={onRemover} offset={offset} />
         </>
       )}

@@ -42,6 +42,17 @@ export const rotuloMes = (base, ano, offset) => {
   return { nome: MESES[mesBase], ano: anoBase };
 };
 
+// Conta à vista: acontece uma vez, no mês em que foi lançada, e não aparece
+// no seguinte. No banco ela é uma parcela única — "1 de 1" — e não um tipo
+// novo, porque o modelo que já existe se comporta exatamente assim:
+// `ativoEm` a deixa só no offset 0 e `fecharMes` a descarta ao virar o mês.
+// Um tipo 'avista' pediria alterar o schema pra ganhar o mesmo resultado, e
+// abriria um terceiro caminho em cada `if` que hoje só tem dois.
+//
+// Como o banco garante `paga >= 1` e `paga <= total`, total 1 já implica
+// paga 1: não existe "0 de 1" nem "2 de 1".
+export const ehAVista = (it) => it.tipo === "parcelado" && it.total === 1;
+
 // Um mês à frente sem nenhum lançamento não é planejamento: "outubro
 // planejado, vazio" e "outubro ainda não planejado" dizem a mesma coisa, e
 // guardar o registro só atrapalha (zera a projeção daquele mês e, se for

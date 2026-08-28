@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
-import { MESES, ativoEm, faltam, rotuloMes, fecharMes, deslocarMes, posDoMes, mesmoMes, distanciaMeses } from "./lib/caderno";
+import { MESES, ativoEm, faltam, rotuloMes, fecharMes, deslocarMes, posDoMes, mesmoMes, distanciaMeses, ehAVista } from "./lib/caderno";
 import * as repo from "./lib/repositorio.js";
 import { useTema } from "./lib/tema.js";
 import AbaMes from "./components/AbaMes.jsx";
@@ -214,9 +214,13 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     if (o < 0) return [];
     return ultimoConcreto.itens.filter((it) => ativoEm(it, o - distanciaBase));
   };
-  const fixosEm = (o) => itensEm(o).filter((i) => i.tipo === "fixo").reduce((s, i) => s + i.valor, 0);
-  const parceladoEm = (o) => itensEm(o).filter((i) => i.tipo === "parcelado").reduce((s, i) => s + i.valor, 0);
-  const totalEm = (o) => fixosEm(o) + parceladoEm(o);
+  const somaEm = (o, cabe) => itensEm(o).filter(cabe).reduce((s, i) => s + i.valor, 0);
+  const fixosEm = (o) => somaEm(o, (i) => i.tipo === "fixo");
+  // À vista sai do subtotal de "parcelado": aquela linha fala do que segue
+  // pesando nos próximos meses, e a conta à vista acaba neste.
+  const parceladoEm = (o) => somaEm(o, (i) => i.tipo === "parcelado" && !ehAVista(i));
+  const aVistaEm = (o) => somaEm(o, ehAVista);
+  const totalEm = (o) => fixosEm(o) + parceladoEm(o) + aVistaEm(o);
   // Que mês do calendário cai nesse passo da linha do tempo.
   const mesEm = (o) => {
     const reg = registroEm(o);
@@ -230,11 +234,14 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   };
   const encerramEm = (o) => {
     const reg = registroEm(o);
-    if (reg) return reg.itens.filter((i) => i.tipo === "parcelado" && i.paga === i.total);
+    // "última parcela: X" é aviso de compromisso que vai sair da conta. Uma
+    // compra à vista nunca esteve nos meses seguintes, então anunciá-la aqui
+    // seria ruído.
+    if (reg) return reg.itens.filter((i) => i.tipo === "parcelado" && !ehAVista(i) && i.paga === i.total);
     if (o < 0) return [];
     const rel = o - distanciaBase;
     return ultimoConcreto.itens.filter(
-      (i) => i.tipo === "parcelado" && ativoEm(i, rel) && !ativoEm(i, rel + 1)
+      (i) => i.tipo === "parcelado" && !ehAVista(i) && ativoEm(i, rel) && !ativoEm(i, rel + 1)
     );
   };
 
@@ -257,22 +264,33 @@ function CadernoContas({ session, tema, onAlternarTema }) {
 
   const remover = (id) => executar(() => repo.removerLancamento(id));
 
+  // O lançamento à vista volta do banco como parcelado 1/1. O formulário tem
+  // que reabrir no segmento "à vista", senão bastava salvar de novo pra ele
+  // virar parcelado sem ninguém pedir.
+  const abrirEdicao = (it) => setForm(ehAVista(it) ? { ...it, tipo: "avista" } : { ...it });
+
   const gravarForm = () => {
     const nome = (form.nome || "").trim();
     const valor = parseFloat(String(form.valor).replace(",", "."));
     if (!nome || !valor || valor <= 0) return;
 
-    const item = {
-      nome,
-      valor,
-      tipo: form.tipo,
-      ...(form.tipo === "parcelado"
-        ? (() => {
-            const paga = Math.max(1, parseInt(form.paga) || 1);
-            return { paga, total: Math.max(paga, parseInt(form.total) || 1) };
-          })()
-        : {}),
-    };
+    // "À vista" não é um tipo no banco: é a parcela única. O resto do app —
+    // projeção, fechar mês, backup — já trata "1 de 1" exatamente assim, então
+    // não há caminho novo pra manter em dia.
+    const item =
+      form.tipo === "avista"
+        ? { nome, valor, tipo: "parcelado", paga: 1, total: 1 }
+        : {
+            nome,
+            valor,
+            tipo: form.tipo,
+            ...(form.tipo === "parcelado"
+              ? (() => {
+                  const paga = Math.max(1, parseInt(form.paga) || 1);
+                  return { paga, total: Math.max(paga, parseInt(form.total) || 1) };
+                })()
+              : {}),
+          };
 
     const alvo = mesDaTela();
     executar(() =>
@@ -341,12 +359,13 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     };
     const linhas = [["nome", "tipo", "valor", "parcela atual", "total de parcelas"]];
     for (const it of itens) {
+      const parcelado = it.tipo === "parcelado" && !ehAVista(it);
       linhas.push([
         it.nome,
-        it.tipo,
+        ehAVista(it) ? "à vista" : it.tipo,
         String(it.valor).replace(".", ","),
-        it.tipo === "parcelado" ? it.paga : "",
-        it.tipo === "parcelado" ? it.total : "",
+        parcelado ? it.paga : "",
+        parcelado ? it.total : "",
       ]);
     }
     const csv = linhas.map((l) => l.map(campo).join(";")).join("\r\n");
@@ -509,7 +528,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
           emHistorico || emFuturo ? (
             <AbaMesHistorico
               entry={emHistorico ? entryHistorico : entryFuturo}
-              onEditar={setForm}
+              onEditar={abrirEdicao}
               onRemover={remover}
             />
           ) : (
@@ -520,8 +539,9 @@ function CadernoContas({ session, tema, onAlternarTema }) {
               totalMes={totalEm(pos)}
               somaFixosMes={fixosEm(pos)}
               somaParcelasMes={parceladoEm(pos)}
+              somaAVistaMes={aVistaEm(pos)}
               itensDoMes={itensEm(pos)}
-              onEditar={setForm}
+              onEditar={abrirEdicao}
               onRemover={remover}
             />
           )

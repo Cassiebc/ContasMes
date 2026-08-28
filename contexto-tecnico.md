@@ -1,7 +1,7 @@
 # Caderno de Contas — contexto técnico
 
 Documento de contexto para retomar o projeto em novas sessões.
-Última atualização: 2026-08-25.
+Última atualização: 2026-08-28.
 
 Se você é uma sessão nova: leia este arquivo inteiro antes de mexer em
 qualquer coisa. Várias decisões aqui parecem estranhas e são deliberadas —
@@ -58,8 +58,8 @@ src/
   supabase.js       cria o client a partir das env vars
   index.css         @custom-variant dark + reset mínimo
   lib/
-    caderno.js      helpers puros (MESES, brl, ativoEm, rotuloMes, fecharMes,
-                    deslocarMes, distanciaMeses, posDoMes)
+    caderno.js      helpers puros (MESES, brl, ativoEm, ehAVista, rotuloMes,
+                    fecharMes, deslocarMes, distanciaMeses, posDoMes)
     caderno.test.js testes da regra de negócio
     repositorio.js  todo o acesso ao banco; a tela não conhece SQL
     tema.js         hook useTema (claro/escuro + persistência)
@@ -87,6 +87,7 @@ e2e/                testes de ponta a ponta (Playwright) — veja e2e/README.md
   esvaziar-mes.mjs        apagar o ultimo lancamento
   virada-do-ano.mjs       voltar de janeiro pra dezembro
   instalar.mjs            o convite de instalar o PWA
+  conta-a-vista.mjs       a compra que nao atravessa o mes
 public/
   manifest.json     standalone, portrait, ícones normais + maskable, screenshots
   sw.js             service worker, cache "caderno-v1", network-first
@@ -182,6 +183,47 @@ Duas defesas que vale não remover sem entender:
 - **Fixos**: entram todo mês, sem data de fim.
 - **Parcelado**: informa-se "já paguei X de Y". A parcela X é a do mês atual,
   então faltam `Y - X` meses depois deste.
+- **À vista**: a compra que não se repete — fica só no mês em que foi lançada
+  e não aparece no seguinte.
+- **"Já paguei" é a parcela deste mês**, não quantas já saíram da conta.
+  Digitar `0` vira `1` em silêncio: `gravarForm()` faz
+  `Math.max(1, parseInt(form.paga) || 1)` e `0` é falsy em JavaScript. O banco
+  recusaria o zero de todo jeito (`check paga >= 1`). Consequência: não há como
+  dizer "comprei, mas a primeira parcela só cai no mês que vem" — o app sempre
+  entende que a primeira é a deste mês.
+
+### À vista é a parcela única, não um tipo novo
+
+Vale saber antes de "consertar": **não existe `tipo = 'avista'` no banco.**
+Uma conta à vista é gravada como `parcelado` com `paga = 1, total = 1`, e
+`ehAVista()` (em `lib/caderno.js`) é quem a reconhece.
+
+O motivo é que o modelo que já existia se comporta exatamente assim, sem
+nenhuma linha nova de regra:
+
+- `ativoEm()` — `faltam` é `1 - 1 = 0`, então ela só passa no offset 0;
+- `fecharMes()` — a parcela avança pra 2, ultrapassa o total e ela é
+  descartada ao virar o mês;
+- a projeção, o backup JSON e as constraints `parcelas_coerentes` já valem
+  sem tocar em nada.
+
+Um tipo `'avista'` pediria `alter table` (que só a usuária roda) e abriria um
+terceiro caminho em cada `if` que hoje só tem dois — `paraItem`, `paraLinha`,
+`faltam`, `ativoEm`, `fecharMes`, `escreverMeses` —, com o risco conhecido
+deste projeto: basta um deles esquecer e volta bug de consistência.
+
+O que a tela faz com `ehAVista()`:
+
+- seção própria "à vista" em `AbaMes` e `AbaMesHistorico`, e subtotal próprio
+  no `CardTotal` (que só aparece quando existe alguma);
+- esconde o "01/01 · última" no `Secao` — o título da seção já diz o que é;
+- tira essas contas do "última parcela: X" da projeção (`encerramEm`), porque
+  elas nunca estiveram nos meses seguintes;
+- reabre o formulário no segmento certo ao editar (`abrirEdicao` no `App.jsx`).
+  Sem isso, salvar de novo um lançamento à vista o transformaria em parcelado.
+
+No CSV a coluna `tipo` sai como "à vista" e as de parcela vão vazias. O JSON
+de backup guarda o `1 de 1` como está, então ele volta idêntico.
 - O mês **nunca vira sozinho** quando o calendário muda. Só pelos botões
   "fechar mês"/"abrir mês" — porque virar de mês significa dar mais uma
   parcela como paga em tudo, e isso é decisão do usuário, não do relógio.
@@ -421,7 +463,7 @@ Dois níveis, e o segundo é o que importa.
 npm test        # Vitest: funcoes puras de lib/caderno.js
 npm run build   # o build tem que passar antes de qualquer commit
 npm run e2e     # Playwright: o fluxo completo, 55 checagens
-npm run e2e:tudo  # os cinco arquivos de e2e/
+npm run e2e:tudo  # os seis arquivos de e2e/
 ```
 
 `npm test` cobre só as funções puras — cálculo de parcela, virada de mês,
