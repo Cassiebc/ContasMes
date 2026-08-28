@@ -48,7 +48,7 @@ export default function FormConta({ form, setForm, onGravar, onCancelar }) {
           </div>
 
           <div className="flex gap-0.5 bg-[var(--preenchido)] rounded-lg p-0.5 mb-5">
-            {[["fixo", "Todo mês"], ["parcelado", "Parcelado"]].map(([k, r]) => (
+            {[["fixo", "Todo mês"], ["parcelado", "Parcelado"], ["avista", "À vista"]].map(([k, r]) => (
               <button key={k} onClick={() => setForm({ ...form, tipo: k })}
                 aria-pressed={form.tipo === k}
                 className={`flex-1 py-1.5 text-[13px] rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)] ${
@@ -59,6 +59,14 @@ export default function FormConta({ form, setForm, onGravar, onCancelar }) {
               </button>
             ))}
           </div>
+
+          <p className="text-[13px] text-[var(--rotulo-2)] leading-snug -mt-3 mb-5 px-1">
+            {form.tipo === "fixo"
+              ? "Entra todo mês, sem data de fim."
+              : form.tipo === "avista"
+                ? "Fica só neste mês. Não aparece no mês que vem."
+                : "“Já paguei” é a parcela deste mês: 1 de 10 quer dizer que faltam 9 depois desta."}
+          </p>
 
           {form.tipo === "parcelado" && (
             <div className="bg-[var(--cartao)] rounded-xl overflow-hidden lista-ios">

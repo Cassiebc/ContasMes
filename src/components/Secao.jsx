@@ -1,4 +1,4 @@
-import { brl } from "../lib/caderno";
+import { brl, ehAVista } from "../lib/caderno";
 
 export default function Secao({ titulo, itens, onEditar, onRemover, offset, readOnly = false }) {
   if (itens.length === 0) return null;
@@ -9,12 +9,15 @@ export default function Secao({ titulo, itens, onEditar, onRemover, offset, read
       </h2>
       <div className="bg-[var(--cartao)] rounded-xl overflow-hidden lista-ios">
         {itens.map((it) => {
-          const parcelaAtual = it.tipo === "parcelado" ? it.paga + offset : null;
-          const resta = it.tipo === "parcelado" ? it.total - parcelaAtual : null;
+          // À vista é parcela única no banco. Mostrar "01/01 · última" ali só
+          // confundiria: o título da seção já diz o que ela é.
+          const contaParcela = it.tipo === "parcelado" && !ehAVista(it);
+          const parcelaAtual = contaParcela ? it.paga + offset : null;
+          const resta = contaParcela ? it.total - parcelaAtual : null;
           const detalhes = (
             <>
               <div className="text-[17px] leading-tight">{it.nome}</div>
-              {it.tipo === "parcelado" && (
+              {contaParcela && (
                 <div className="text-[13px] text-[var(--rotulo-2)] tabular mt-0.5">
                   {String(parcelaAtual).padStart(2, "0")}/{String(it.total).padStart(2, "0")}
                   {resta === 0 ? " · última" : ` · faltam ${resta}`}

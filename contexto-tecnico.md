@@ -1,7 +1,7 @@
 # Caderno de Contas — contexto técnico
 
 Documento de contexto para retomar o projeto em novas sessões.
-Última atualização: 2026-08-24.
+Última atualização: 2026-08-28.
 
 Se você é uma sessão nova: leia este arquivo inteiro antes de mexer em
 qualquer coisa. Várias decisões aqui parecem estranhas e são deliberadas —
@@ -24,13 +24,14 @@ sessão, clonar/atualizar o repositório e trabalhar a partir dele, em vez de
 assumir um caminho fixo.
 
 Fluxo de trabalho: commits vão para `dev`, são testados, e só então `dev` é
-mesclada em `main`.
+mesclada em `main` — por pull request, porque a `main` é protegida (veja
+"Licença e código aberto").
 
-**Dar push em `main` publica em produção.** O projeto na Vercel está ligado ao
-repositório no GitHub, então todo push nessa branch dispara um deploy sozinho
-(dá pra confirmar pela URL `cadernocontas-git-main-*` nos deploys). Push em
-`dev` não publica. `vercel --prod` continua funcionando para publicar à mão,
-mas não é necessário.
+**Mesclar na `main` publica em produção.** O projeto na Vercel está ligado ao
+repositório no GitHub, então toda mudança nessa branch dispara um deploy
+sozinho (dá pra confirmar pela URL `cadernocontas-git-main-*` nos deploys).
+Push em `dev` não publica. `vercel --prod` continua funcionando para publicar
+à mão, mas não é necessário.
 
 ## Stack
 
@@ -57,8 +58,8 @@ src/
   supabase.js       cria o client a partir das env vars
   index.css         @custom-variant dark + reset mínimo
   lib/
-    caderno.js      helpers puros (MESES, brl, ativoEm, rotuloMes, fecharMes,
-                    deslocarMes, distanciaMeses, posDoMes)
+    caderno.js      helpers puros (MESES, brl, ativoEm, ehAVista, rotuloMes,
+                    fecharMes, deslocarMes, distanciaMeses, posDoMes)
     caderno.test.js testes da regra de negócio
     repositorio.js  todo o acesso ao banco; a tela não conhece SQL
     tema.js         hook useTema (claro/escuro + persistência)
@@ -86,6 +87,7 @@ e2e/                testes de ponta a ponta (Playwright) — veja e2e/README.md
   esvaziar-mes.mjs        apagar o ultimo lancamento
   virada-do-ano.mjs       voltar de janeiro pra dezembro
   instalar.mjs            o convite de instalar o PWA
+  conta-a-vista.mjs       a compra que nao atravessa o mes
 public/
   manifest.json     standalone, portrait, ícones normais + maskable, screenshots
   sw.js             service worker, cache "caderno-v1", network-first
@@ -181,6 +183,47 @@ Duas defesas que vale não remover sem entender:
 - **Fixos**: entram todo mês, sem data de fim.
 - **Parcelado**: informa-se "já paguei X de Y". A parcela X é a do mês atual,
   então faltam `Y - X` meses depois deste.
+- **À vista**: a compra que não se repete — fica só no mês em que foi lançada
+  e não aparece no seguinte.
+- **"Já paguei" é a parcela deste mês**, não quantas já saíram da conta.
+  Digitar `0` vira `1` em silêncio: `gravarForm()` faz
+  `Math.max(1, parseInt(form.paga) || 1)` e `0` é falsy em JavaScript. O banco
+  recusaria o zero de todo jeito (`check paga >= 1`). Consequência: não há como
+  dizer "comprei, mas a primeira parcela só cai no mês que vem" — o app sempre
+  entende que a primeira é a deste mês.
+
+### À vista é a parcela única, não um tipo novo
+
+Vale saber antes de "consertar": **não existe `tipo = 'avista'` no banco.**
+Uma conta à vista é gravada como `parcelado` com `paga = 1, total = 1`, e
+`ehAVista()` (em `lib/caderno.js`) é quem a reconhece.
+
+O motivo é que o modelo que já existia se comporta exatamente assim, sem
+nenhuma linha nova de regra:
+
+- `ativoEm()` — `faltam` é `1 - 1 = 0`, então ela só passa no offset 0;
+- `fecharMes()` — a parcela avança pra 2, ultrapassa o total e ela é
+  descartada ao virar o mês;
+- a projeção, o backup JSON e as constraints `parcelas_coerentes` já valem
+  sem tocar em nada.
+
+Um tipo `'avista'` pediria `alter table` (que só a usuária roda) e abriria um
+terceiro caminho em cada `if` que hoje só tem dois — `paraItem`, `paraLinha`,
+`faltam`, `ativoEm`, `fecharMes`, `escreverMeses` —, com o risco conhecido
+deste projeto: basta um deles esquecer e volta bug de consistência.
+
+O que a tela faz com `ehAVista()`:
+
+- seção própria "à vista" em `AbaMes` e `AbaMesHistorico`, e subtotal próprio
+  no `CardTotal` (que só aparece quando existe alguma);
+- esconde o "01/01 · última" no `Secao` — o título da seção já diz o que é;
+- tira essas contas do "última parcela: X" da projeção (`encerramEm`), porque
+  elas nunca estiveram nos meses seguintes;
+- reabre o formulário no segmento certo ao editar (`abrirEdicao` no `App.jsx`).
+  Sem isso, salvar de novo um lançamento à vista o transformaria em parcelado.
+
+No CSV a coluna `tipo` sai como "à vista" e as de parcela vão vazias. O JSON
+de backup guarda o `1 de 1` como está, então ele volta idêntico.
 - O mês **nunca vira sozinho** quando o calendário muda. Só pelos botões
   "fechar mês"/"abrir mês" — porque virar de mês significa dar mais uma
   parcela como paga em tudo, e isso é decisão do usuário, não do relógio.
@@ -383,9 +426,11 @@ conteúdo para o navegador sequer perceber.
 
 ## Deploy
 
-**O jeito normal é dar push em `main`** — a Vercel está ligada ao GitHub e
-publica sozinha, em poucos segundos. `vercel --prod` continua funcionando pra
-publicar à mão, mas não é necessário.
+**O jeito normal é abrir um PR de `dev` para `main` e mesclar** — push direto
+na `main` é recusado desde que o repositório virou público e o ruleset
+`protecao-main` passou a valer. Mesclado o PR, a Vercel publica sozinha, em
+poucos segundos. `vercel --prod` continua funcionando pra publicar à mão, mas
+não é necessário.
 
 As duas variáveis (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) precisam
 estar cadastradas em Settings → Environment Variables no painel da Vercel, e o
@@ -418,7 +463,7 @@ Dois níveis, e o segundo é o que importa.
 npm test        # Vitest: funcoes puras de lib/caderno.js
 npm run build   # o build tem que passar antes de qualquer commit
 npm run e2e     # Playwright: o fluxo completo, 55 checagens
-npm run e2e:tudo  # os cinco arquivos de e2e/
+npm run e2e:tudo  # os seis arquivos de e2e/
 ```
 
 `npm test` cobre só as funções puras — cálculo de parcela, virada de mês,
@@ -494,6 +539,46 @@ combinar antes):
   repetível;
 - contas de teste criadas para os e2e — só a usuária remove, pelo painel do
   Supabase.
+
+## Licença e código aberto
+
+O projeto é licenciado sob **MIT** desde 2026-08-25 — o texto está em
+`LICENSE`, na raiz, com o copyright em nome de Bruna Cássia dos Santos
+Simões. A escolha foi deliberada: MIT é a licença de toda a stack do projeto
+(React, Vite, Tailwind, `supabase-js`), é curta o bastante para ser lida, e a
+cláusula de ausência de garantia importa num app que projeta contas a pagar.
+AGPL foi considerada e descartada — protege contra um cenário que não se
+aplica a um projeto pessoal e afasta contribuidor casual.
+
+O repositório era privado até essa data. Abrir o código **não** muda o modelo
+de segurança, e vale entender por quê antes de mexer aqui:
+
+- a chave que vai no bundle é publishable/anon, **pública por design**; quem
+  abre o DevTools em produção já a tem;
+- quem protege os dados é o RLS do Postgres, aplicado no banco, não a
+  obscuridade do `schema-v2.sql`;
+- não há segredo no histórico do Git — conferido commit a commit; `.env` e
+  `.env*` estão no `.gitignore`, e o `.env.example` só tem placeholder;
+- o único identificador exposto é a ref do projeto Supabase no `connect-src`
+  da CSP em `vercel.json`, que já vai no cabeçalho de todo response em
+  produção.
+
+O que muda com o código aberto é só isto: fork não toca neste repositório, e
+pull request de fora não publica nada — publicar exige mesclar na `main`, e só
+a dona da conta faz isso. O caminho realista para um deploy ruim continua sendo
+mesclar um PR sem ler.
+
+A `main` é protegida pelo ruleset `protecao-main`, criado em 2026-08-25: exige
+pull request, bloqueia force push e impede apagar a branch (confirmado pela API
+pública — `pull_request`, `non_fast_forward`, `deletion`). Ele só passou a
+valer quando o repositório virou público: ruleset em repositório privado exige
+plano pago, e fica salvo mas sem efeito. Mexer nisso é pelo painel do GitHub —
+o `gh` não está instalado nas máquinas usadas.
+
+Sobre autoria: o código é escrito com assistência do Claude Code, e isso está
+registrado no README e nos trailers `Co-Authored-By` dos commits. A
+titularidade é da usuária: ferramenta não é autora, e o crédito de quem
+participou de cada mudança vive no histórico, não na licença.
 
 ## Observação sobre continuidade
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { faltam, ativoEm, rotuloMes, fecharMes, ehPlanejamentoVazio,
+import { faltam, ativoEm, rotuloMes, fecharMes, ehPlanejamentoVazio, ehAVista,
   deslocarMes,
   posDoMes,
   distanciaMeses,
@@ -216,5 +216,41 @@ describe("distanciaMeses", () => {
   });
   it("conta pra tras", () => {
     expect(distanciaMeses({ mesBase: 10, anoBase: 2026 }, { mesBase: 7, anoBase: 2026 })).toBe(-3);
+  });
+});
+
+describe("ehAVista", () => {
+  it("parcela unica e conta a vista", () => {
+    expect(ehAVista({ tipo: "parcelado", paga: 1, total: 1 })).toBe(true);
+  });
+
+  it("parcelado de verdade nao e, nem na ultima parcela", () => {
+    expect(ehAVista({ tipo: "parcelado", paga: 1, total: 10 })).toBe(false);
+    expect(ehAVista({ tipo: "parcelado", paga: 3, total: 3 })).toBe(false);
+  });
+
+  it("fixo nao e", () => {
+    expect(ehAVista({ tipo: "fixo" })).toBe(false);
+  });
+
+  it("aparece so no mes em que foi lancada", () => {
+    // E o motivo de a conta a vista nao precisar de tipo novo no banco: a
+    // parcela unica ja se comporta exatamente assim.
+    const compra = { tipo: "parcelado", paga: 1, total: 1 };
+    expect(ativoEm(compra, 0)).toBe(true);
+    expect(ativoEm(compra, 1)).toBe(false);
+    expect(ativoEm(compra, 2)).toBe(false);
+  });
+
+  it("nao atravessa o fechamento do mes", () => {
+    const r = fecharMes({
+      itens: [
+        { id: "1", tipo: "parcelado", nome: "Mercado", valor: 200, paga: 1, total: 1 },
+        { id: "2", tipo: "fixo", nome: "Internet", valor: 80 },
+      ],
+      mesBase: 7,
+      anoBase: 2026,
+    });
+    expect(r.itens.map((i) => i.id)).toEqual(["2"]);
   });
 });
