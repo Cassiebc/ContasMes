@@ -73,6 +73,33 @@ export const fecharMes = ({ itens, mesBase, anoBase }) => {
   };
 };
 
+// De onde a projeção de um mês parte: o último mês que EXISTE antes dele —
+// o planejado mais recente, ou o mês atual quando não há planejamento no meio.
+//
+// É o que faz planejar dezembro continuar propagando pra janeiro sem que
+// planejar dezembro apague novembro da conta. Antes a projeção partia sempre
+// do último planejado da lista, então um planejamento distante engolia todos
+// os meses entre ele e o atual.
+//
+// Não depende de `futuro` estar ordenado: percorre todos e fica com o mais
+// tardio que ainda vem antes do alvo.
+export const baseDaProjecao = (alvo, { dados, futuro }) =>
+  futuro
+    .filter((m) => distanciaMeses(m, alvo) > 0)
+    .reduce((mais, m) => (distanciaMeses(mais, m) > 0 ? m : mais), dados);
+
+// Os itens como ficam `n` meses à frente: as parcelas já na casa certa e as
+// que acabaram fora. É `fecharMes` aplicado n vezes, de uma vez só.
+//
+// Serve pra materializar um mês planejado. Quando se lança uma conta num mês
+// à frente que ainda não existia, ele nasce com a projeção dentro, não só com
+// a conta nova — um novembro guardando só o IPVA valeria menos que outubro na
+// projeção e, ao ser adotado num fechamento, levaria as contas fixas embora.
+export const projetarItens = (itens, n) =>
+  itens
+    .filter((it) => ativoEm(it, n))
+    .map((it) => (it.tipo === "fixo" ? it : { ...it, paga: it.paga + n }));
+
 export const mesmoMes = (a, b) => a.mesBase === b.mesBase && a.anoBase === b.anoBase;
 
 // Quantos meses separam (a) de (b). Positivo quando b vem depois.
@@ -81,21 +108,14 @@ export const distanciaMeses = (a, b) =>
 
 // Em que passo da linha do tempo um mês aparece, dado o caderno lido.
 //
-// Para trás o passo é distância de calendário: um passo atrás é sempre o mês
-// anterior, exista registro ou não. Foi isso que destravou quem tinha o mês
-// atual adiantado — antes o passo contava registros, então quem não tinha
-// histórico não tinha para onde voltar, e quem tinha um registro antigo
-// pulava direto pra ele, deixando os meses do meio inalcançáveis.
+// É distância de calendário nos dois sentidos: um passo é sempre um mês do
+// calendário, exista registro ou não. A posição de novembro não muda quando
+// novembro passa a existir, nem quando outubro deixa de existir.
 //
-// Para frente o passo continua contando registros planejados e depois a
-// projeção, que é como o resto da tela já raciocina.
-export const posDoMes = (alvo, { dados, historico, futuro }) => {
-  const d = distanciaMeses(dados, alvo);
-  if (d <= 0) return d;
-
-  const iF = futuro.findIndex((m) => mesmoMes(m, alvo));
-  if (iF >= 0) return iF + 1;
-
-  const ultimo = futuro.length > 0 ? futuro[futuro.length - 1] : dados;
-  return futuro.length + distanciaMeses(ultimo, alvo);
-};
+// Contar registros já foi o jeito dos dois lados, e nos dois deu o mesmo bug.
+// Pra trás, deixava sem saída quem tinha o mês atual adiantado e nenhum
+// histórico, e tornava inalcançáveis os meses entre o atual e um registro
+// antigo. Pra frente era igual: quem planejasse novembro sem planejar outubro
+// perdia outubro da linha do tempo. Calendário nos dois lados resolve os dois,
+// e é por isso que esta função não olha mais `historico` nem `futuro`.
+export const posDoMes = (alvo, { dados }) => distanciaMeses(dados, alvo);

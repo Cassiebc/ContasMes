@@ -42,7 +42,7 @@ Com o app subido em outra janela (`npm run dev`):
 
 ```bash
 npm run e2e         # só o fluxo completo (55 checagens)
-npm run e2e:tudo    # os seis arquivos
+npm run e2e:tudo    # os sete arquivos
 ```
 
 Para testar contra produção ou contra um Preview em vez do local:
@@ -64,6 +64,7 @@ deste projeto foi conferida.
 | `virada-do-ano.mjs` | Voltar de janeiro para dezembro do ano anterior. O título já virou "undefined" aqui. |
 | `instalar.mjs` | O convite de instalar o PWA: Android, iPhone, dispensar e reencontrar, e o caso de já estar instalado. |
 | `conta-a-vista.mjs` | A conta à vista, que no banco é a parcela única (1 de 1): grava 1/1, não vai pra projeção, não atravessa o fechamento, fica no mês fechado, e editar não a transforma em parcelada. |
+| `planejar-mes-a-frente.mjs` | Navegar até um mês futuro e lançar ali sem mexer no atual: a conta cai no mês certo, o mês nasce com a projeção junto, os meses do meio continuam alcançáveis, e fechar o atual vai pro próximo do calendário. |
 
 ## Como são escritos
 

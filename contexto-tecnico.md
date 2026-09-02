@@ -1,7 +1,7 @@
 # Caderno de Contas — contexto técnico
 
 Documento de contexto para retomar o projeto em novas sessões.
-Última atualização: 2026-08-28.
+Última atualização: 2026-09-02.
 
 Se você é uma sessão nova: leia este arquivo inteiro antes de mexer em
 qualquer coisa. Várias decisões aqui parecem estranhas e são deliberadas —
@@ -59,7 +59,8 @@ src/
   index.css         @custom-variant dark + reset mínimo
   lib/
     caderno.js      helpers puros (MESES, brl, ativoEm, ehAVista, rotuloMes,
-                    fecharMes, deslocarMes, distanciaMeses, posDoMes)
+                    fecharMes, deslocarMes, distanciaMeses, posDoMes,
+                    baseDaProjecao, projetarItens)
     caderno.test.js testes da regra de negócio
     repositorio.js  todo o acesso ao banco; a tela não conhece SQL
     tema.js         hook useTema (claro/escuro + persistência)
@@ -88,6 +89,7 @@ e2e/                testes de ponta a ponta (Playwright) — veja e2e/README.md
   virada-do-ano.mjs       voltar de janeiro pra dezembro
   instalar.mjs            o convite de instalar o PWA
   conta-a-vista.mjs       a compra que nao atravessa o mes
+  planejar-mes-a-frente.mjs  lancar num mes futuro sem fechar o atual
 public/
   manifest.json     standalone, portrait, ícones normais + maskable, screenshots
   sw.js             service worker, cache "caderno-v1", network-first
@@ -232,17 +234,19 @@ de backup guarda o `1 de 1` como está, então ele volta idêntico.
 
 ### Como a tela lê a linha do tempo
 
-`App.jsx` trabalha com um `offset` — **passos** até o mês atual, não meses:
+`App.jsx` trabalha com um `offset` que é **distância em meses** até o atual,
+nos dois sentidos. Um passo é sempre um mês do calendário, tenha registro no
+banco ou não:
 
-| offset | de onde vem | editável? |
+| offset | de onde vem | onde o lançamento grava |
 | --- | --- | --- |
-| `< 0` | o mês do calendário a `offset` meses atrás; se houver registro no histórico, ele; senão, um mês vazio | sim, só naquele mês |
-| `0` | `dados` — o mês atual | sim |
-| `1..futuro.length` | `futuro[offset - 1]` | sim, só naquele mês |
-| `> futuro.length` | calculado por `ativoEm()` a partir do último mês que existe | sim, mas grava no mês atual |
+| `< 0` | o registro daquele mês no histórico; se não houver, mês vazio (nada é projetado para trás) | naquele mês, criando-o se preciso |
+| `0` | `dados` — o mês atual | no mês atual |
+| `> 0` | o registro planejado daquele mês; se não houver, a projeção calculada por `ativoEm()` a partir de `baseDaProjecao()` | naquele mês, criando-o **com a projeção junto** |
 
-Repare na assimetria, que é deliberada: **para trás o passo é calendário,
-para frente é registro.** O porquê está em "Navegar para trás" mais abaixo.
+A simetria é o ponto: a posição de um mês não muda por ele passar a existir,
+nem por um vizinho deixar de existir. Veja "A linha do tempo anda pelo
+calendário" mais abaixo — as duas metades já quebraram pelo mesmo motivo.
 
 `historico` e `futuro` não são guardados: `repositorio.carregar()` os deriva
 comparando cada mês com o que está marcado como atual.
@@ -253,10 +257,12 @@ foi se afastando dele. Depois de reler, `reancorar()` reposiciona o `offset`
 no mês que estava na tela: uma escrita pode reordenar a linha do tempo, e o
 mesmo passo passaria a apontar pra outro mês.
 
-**Fechar mês**: marca `fechado_em` no mês atual e passa `atual` pro seguinte.
-Se o mês seguinte já existe (foi planejado), ele é adotado com o que tiver
-dentro; se não, é criado com `fecharMes()` — cada parcela avança uma casa e
-as que acabaram somem.
+**Fechar mês**: marca `fechado_em` no mês atual e passa `atual` pro **mês
+seguinte do calendário** — não pro `futuro[0]`, que era o bug de fechar
+setembro e cair em novembro quando só novembro estava planejado. Se esse mês
+seguinte já existe (foi planejado), ele é adotado com o que tiver dentro; se
+não, é criado com `fecharMes()` — cada parcela avança uma casa e as que
+acabaram somem.
 
 **Abrir mês**: só muda qual mês tem `atual = true`. Não move nada; o resto se
 reorganiza porque "fechado" e "planejado" saem da comparação de datas.
@@ -367,15 +373,20 @@ Detalhe que é fácil errar: `e.preventDefault()` no evento é obrigatório —
 sem ele o Chrome mostra a barra de instalação dele por cima da nossa. E o
 convite **só serve uma vez**; depois de usado tem que ser descartado.
 
-## Navegar para trás: calendário, não registros
+## A linha do tempo anda pelo calendário, não pelos registros
 
-A seta de voltar anda pelo **calendário**, não pela lista de meses que
-existem no banco. Um passo atrás é sempre o mês anterior, tenha registro ou
-não; se não tiver, o mês abre vazio e só vira linha no banco se receber
-lançamento — igual ao que já acontecia do lado do futuro.
+As setas ‹ › andam pelo **calendário** nos dois sentidos, não pela lista de
+meses que existem no banco. Um passo é sempre um mês; se ele não tiver
+registro, abre vazio (no passado) ou projetado (no futuro), e só vira linha no
+banco se receber lançamento.
 
-Antes o passo contava registros (`-historico.length`), e isso criava dois
-becos sem saída:
+Isso já foi diferente nos dois lados, e nos dois deu o mesmo bug. Vale ler as
+duas metades juntas, porque a segunda foi consertada copiando a primeira.
+
+### Para trás (corrigido antes)
+
+O passo contava registros (`-historico.length`), e isso criava dois becos sem
+saída:
 
 - quem tinha o mês atual adiantado e **nenhum histórico** não tinha para onde
   voltar. A seta nascia desabilitada. Como "Abrir mês" só aparece quando você
@@ -387,9 +398,9 @@ becos sem saída:
 
 Três coisas sustentam isso:
 
-**`posDoMes` (em `caderno.js`)** diz em que passo um mês aparece. No passado é
-distância de calendário pura, então a posição de agosto **não muda** quando
-agosto passa a existir.
+**`posDoMes` (em `caderno.js`)** diz em que passo um mês aparece. Hoje é
+`distanciaMeses(dados, alvo)` e nada mais — nem olha `historico` ou `futuro`.
+A posição de agosto **não muda** quando agosto passa a existir.
 
 **A tela reancora pelo mês depois de cada escrita.** `executar()` relê o
 caderno e chama `reancorar()`, que reposiciona o `offset` no mês que estava na
@@ -404,10 +415,46 @@ a pessoa nunca registrou, e as parcelas viriam com número negativo.
 `abrirMesNoBanco()` cria a linha antes de marcar como atual, porque agora dá
 para pedir "abrir mês" em um mês que ainda não existe.
 
-Uma assimetria conhecida ficou de pé: **para frente** o passo ainda conta
-registros planejados. Quem planeja dezembro sem planejar novembro não alcança
-novembro pela seta. Não foi mexido de propósito — essa é a mesma lógica de
-`distanciaBase` que sustenta a projeção e já custou uma rodada de bugs.
+### Para frente (corrigido depois, do mesmo jeito)
+
+A assimetria que ficou de pé na correção anterior era real e custou um bug:
+**não dava para planejar um mês à frente pela tela.** Navegar até novembro e
+lançar fazia a conta cair em setembro, porque a zona de projeção não tinha
+registro próprio e `mesDaTela()` caía no mês atual.
+
+Consertar só isso não bastava, e é o que vale entender antes de mexer aqui.
+Assim que novembro passasse a existir, com `offset` contando registros ele
+viraria o **passo 1** — e outubro, que nunca existiu, sumia da linha do tempo
+para sempre. Pior: `virarMes()` usava `futuro[0]` como "o próximo", então
+fechar setembro pularia direto para novembro e outubro nunca chegaria a
+existir. Um bug de navegação virava perda de mês.
+
+A correção é a mesma do passado, e agora as duas metades são a mesma regra:
+
+**O passo é calendário para frente também.** `posDoMes` virou uma linha, e
+`registroEm()` procura o mês pela data nas duas listas, em vez de indexar
+`futuro` por posição.
+
+**`baseDaProjecao(alvo, { dados, futuro })`** decide de onde a projeção de um
+mês parte: o último mês que **existe antes dele** — o planejado mais recente,
+ou o atual quando não há planejamento no meio. Antes a projeção partia sempre
+do último planejado da lista, então planejar dezembro fazia novembro projetar
+a partir de dezembro, que vem depois dele.
+
+**`virarMes()` fecha no próximo do calendário**, procurando em `futuro` o mês
+que de fato é o seguinte, em vez de pegar `futuro[0]`.
+
+**Lançar num mês à frente materializa a projeção junto.** `projetarItens()`
+gera os itens daquele mês com as parcelas já na casa certa, e `repo.lancar()`
+os grava como "semente" quando o mês está nascendo. Sem isso, um novembro
+guardando só o IPVA valeria menos que outubro na projeção e, ao ser adotado
+num fechamento, levaria as contas fixas embora — o bug do planejamento vazio
+entrando por outra porta.
+
+O preço disso, e é uma escolha consciente: o mês planejado é um **retrato**,
+não uma fórmula. Se o aluguel mudar de valor em setembro depois de novembro já
+ter sido planejado, novembro fica com o valor antigo até ser editado. É o
+mesmo comportamento que `fecharMes()` já tinha ao materializar o mês seguinte.
 
 ## Atualização depois de um deploy
 
@@ -463,7 +510,7 @@ Dois níveis, e o segundo é o que importa.
 npm test        # Vitest: funcoes puras de lib/caderno.js
 npm run build   # o build tem que passar antes de qualquer commit
 npm run e2e     # Playwright: o fluxo completo, 55 checagens
-npm run e2e:tudo  # os seis arquivos de e2e/
+npm run e2e:tudo  # os sete arquivos de e2e/
 ```
 
 `npm test` cobre só as funções puras — cálculo de parcela, virada de mês,
@@ -499,7 +546,11 @@ tempo:
 - lançar num mês do passado que ainda não existia → a tela pulava pra outro
   mês, porque a linha do tempo se reordenou sob o `offset`;
 - voltar de janeiro → o título virava "undefined", porque `%` em JavaScript
-  devolve negativo. Só apareceria na virada do ano.
+  devolve negativo. Só apareceria na virada do ano;
+- navegar até um mês à frente e lançar → a conta caía no mês atual, porque a
+  zona de projeção não tinha registro próprio;
+- planejar novembro sem planejar outubro → outubro sumia da linha do tempo, e
+  fechar setembro pulava direto para novembro.
 
 ## Manutenção: as coisas que mais aparecem
 

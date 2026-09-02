@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
-import { MESES, ativoEm, faltam, rotuloMes, fecharMes, deslocarMes, posDoMes, mesmoMes, distanciaMeses, ehAVista } from "./lib/caderno";
+import { MESES, ativoEm, faltam, rotuloMes, fecharMes, deslocarMes, posDoMes, mesmoMes, distanciaMeses, ehAVista, projetarItens, baseDaProjecao } from "./lib/caderno";
 import * as repo from "./lib/repositorio.js";
 import { useTema } from "./lib/tema.js";
 import AbaMes from "./components/AbaMes.jsx";
@@ -165,45 +165,49 @@ function CadernoContas({ session, tema, onAlternarTema }) {
 
   const { itens, mesBase, anoBase } = dados;
 
-  // A linha do tempo é a ordem das datas; `offset` é a distância até o mês
-  // atual. Negativo cai no passado, positivo no planejado, e além do último
-  // mês que existe a projeção é calculada.
+  // A linha do tempo é a ordem das datas, e `offset` é a distância em MESES
+  // até o atual — nos dois sentidos. Um passo é sempre um mês do calendário,
+  // tenha registro no banco ou não.
   //
-  // Pra trás um passo é sempre o mês anterior do calendário, exista registro
-  // ou não. Antes o passo contava registros: quem tinha o mês atual adiantado
-  // e nenhum histórico não tinha para onde voltar, e quem tinha um registro
-  // antigo pulava direto pra ele — os meses do meio ficavam inalcançáveis.
+  // Pra frente já foi diferente: o passo contava meses planejados. Quem
+  // planejasse novembro sem planejar outubro perdia outubro da linha do tempo,
+  // e "fechar mês" em setembro pulava direto pra novembro. Era o mesmo bug que
+  // o passado já tinha tido, e a mesma correção resolve: contar calendário.
   //
-  // O limite é um ano antes do mês mais antigo que existe, pra que nenhum
-  // histórico fique fora de alcance e a seta ainda pare em algum lugar.
+  // O alcance é de um ano pra cada lado, esticado pra nunca deixar fora um mês
+  // que existe — nem o histórico mais antigo, nem o planejamento mais distante.
   const recuoDoMaisAntigo =
     historico.length > 0 ? -distanciaMeses(dados, historico[0]) : 0;
+  const avancoDoMaisDistante =
+    futuro.length > 0 ? distanciaMeses(dados, futuro[futuro.length - 1]) : 0;
   const limiteAtras = Math.max(12, recuoDoMaisAntigo + 12);
-  const pos = Math.max(offset, -limiteAtras);
+  const limiteFrente = Math.max(12, avancoDoMaisDistante + 12);
+  const pos = Math.min(Math.max(offset, -limiteAtras), limiteFrente);
 
-  const emFuturo = pos > 0 && pos <= futuro.length;
-  const idxFuturo = emFuturo ? pos - 1 : null;
-  const entryFuturo = emFuturo ? futuro[idxFuturo] : null;
+  // Que mês do calendário cai nesse passo. Não depende de nada estar gravado.
+  const mesEm = (o) => deslocarMes(dados.mesBase, dados.anoBase, o);
 
-  // A projeção continua de onde a linha do tempo concreta parou — o último
-  // mês planejado, ou o atual quando não há planejamento.
-  const ultimoConcreto = futuro.length > 0 ? futuro[futuro.length - 1] : dados;
-  const distanciaBase = futuro.length;
-
+  // O registro daquele mês, quando ele existe no banco.
   const registroEm = (o) => {
     if (o === 0) return dados;
-    if (o > 0 && o <= futuro.length) return futuro[o - 1];
-    if (o < 0) {
-      const alvo = deslocarMes(dados.mesBase, dados.anoBase, o);
-      return historico.find((mm) => mesmoMes(mm, alvo)) ?? null;
-    }
-    return null;
+    const alvo = mesEm(o);
+    return (o < 0 ? historico : futuro).find((m) => mesmoMes(m, alvo)) ?? null;
   };
 
-  // No passado o mês pode existir (histórico) ou não (nunca foi registrado).
-  const entryHistorico = pos < 0 ? registroEm(pos) : null;
-  const emHistorico = entryHistorico !== null;
-  const emPassadoVazio = pos < 0 && entryHistorico === null;
+  const registroDaTela = registroEm(pos);
+  const foraDoAtual = pos !== 0;
+  const emHistorico = pos < 0 && registroDaTela !== null;
+  const emPassadoVazio = pos < 0 && registroDaTela === null;
+  const emFuturo = pos > 0 && registroDaTela !== null;
+  const idxFuturo = emFuturo ? futuro.findIndex((m) => m.id === registroDaTela.id) : null;
+
+  // Quantas casas a parcela andou desde o mês de onde a projeção partiu. Num
+  // mês com registro é zero: ali os itens já estão na parcela certa.
+  const baseEm = (o) => baseDaProjecao(mesEm(o), { dados, futuro });
+  const avancoEm = (o) => {
+    if (o <= 0 || registroEm(o)) return 0;
+    return distanciaMeses(baseEm(o), mesEm(o));
+  };
 
   // Projeção fala do que ainda vai acontecer; do passado não se infere nada.
   // Um mês atrás sem registro é um mês sem informação — abre vazio, não com
@@ -212,7 +216,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     const reg = registroEm(o);
     if (reg) return reg.itens;
     if (o < 0) return [];
-    return ultimoConcreto.itens.filter((it) => ativoEm(it, o - distanciaBase));
+    return baseEm(o).itens.filter((it) => ativoEm(it, avancoEm(o)));
   };
   const somaEm = (o, cabe) => itensEm(o).filter(cabe).reduce((s, i) => s + i.valor, 0);
   const fixosEm = (o) => somaEm(o, (i) => i.tipo === "fixo");
@@ -221,46 +225,47 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const parceladoEm = (o) => somaEm(o, (i) => i.tipo === "parcelado" && !ehAVista(i));
   const aVistaEm = (o) => somaEm(o, ehAVista);
   const totalEm = (o) => fixosEm(o) + parceladoEm(o) + aVistaEm(o);
-  // Que mês do calendário cai nesse passo da linha do tempo.
-  const mesEm = (o) => {
-    const reg = registroEm(o);
-    if (reg) return { mesBase: reg.mesBase, anoBase: reg.anoBase };
-    if (o < 0) return deslocarMes(dados.mesBase, dados.anoBase, o);
-    return deslocarMes(ultimoConcreto.mesBase, ultimoConcreto.anoBase, o - distanciaBase);
-  };
   const rotuloEm = (o) => {
     const { mesBase: mb, anoBase: ab } = mesEm(o);
     return { nome: MESES[mb], ano: ab };
   };
   const encerramEm = (o) => {
-    const reg = registroEm(o);
     // "última parcela: X" é aviso de compromisso que vai sair da conta. Uma
     // compra à vista nunca esteve nos meses seguintes, então anunciá-la aqui
     // seria ruído.
-    if (reg) return reg.itens.filter((i) => i.tipo === "parcelado" && !ehAVista(i) && i.paga === i.total);
+    const podeEncerrar = (i) => i.tipo === "parcelado" && !ehAVista(i);
+    const reg = registroEm(o);
+    if (reg) return reg.itens.filter((i) => podeEncerrar(i) && i.paga === i.total);
     if (o < 0) return [];
-    const rel = o - distanciaBase;
-    return ultimoConcreto.itens.filter(
-      (i) => i.tipo === "parcelado" && !ehAVista(i) && ativoEm(i, rel) && !ativoEm(i, rel + 1)
+    const rel = avancoEm(o);
+    return baseEm(o).itens.filter(
+      (i) => podeEncerrar(i) && ativoEm(i, rel) && !ativoEm(i, rel + 1)
     );
   };
 
+  // A lista da aba "projeção" vai até o planejamento mais distante, mais o que
+  // ainda faltar da parcela mais longa que houver lá.
+  const ultimoConcreto = futuro.length > 0 ? futuro[futuro.length - 1] : dados;
   const horizonteComputado = Math.max(
     3,
     ...ultimoConcreto.itens.filter((i) => i.tipo === "parcelado").map((i) => faltam(i))
   );
   const meses = Array.from(
-    { length: Math.min(futuro.length + horizonteComputado + 1, 13) },
+    { length: Math.min(avancoDoMaisDistante + horizonteComputado + 1, 13) },
     (_, i) => i
   );
 
-  // Em que mês a alteração cai: o que está na tela, quando ele existe de
-  // fato; senão o mês atual (a zona de projeção não tem registro próprio).
-  const mesDaTela = () =>
-    emHistorico ? entryHistorico
-    : emFuturo ? entryFuturo
-    : emPassadoVazio ? mesEm(pos)
-    : dados;
+  // Em que mês a alteração cai: o mês que está na tela, sempre. Se ele ainda
+  // não existe no banco vai sem `id`, e o repositório o cria. Antes a zona de
+  // projeção caía no mês atual — era o bug de navegar até novembro, lançar a
+  // conta e ela aparecer em setembro.
+  const mesDaTela = () => registroDaTela ?? mesEm(pos);
+
+  // O mês seguinte do CALENDÁRIO, e o planejamento dele se houver. Pegar
+  // `futuro[0]` fazia setembro fechar direto em novembro quando só novembro
+  // estava planejado, e outubro nunca chegava a existir.
+  const proximoDoCalendario = deslocarMes(mesBase, anoBase, 1);
+  const proximoPlanejado = futuro.find((m) => mesmoMes(m, proximoDoCalendario)) ?? null;
 
   const remover = (id) => executar(() => repo.removerLancamento(id));
 
@@ -292,19 +297,30 @@ function CadernoContas({ session, tema, onAlternarTema }) {
               : {}),
           };
 
+    // Lançar num mês à frente que ainda não existe faz ele nascer com a
+    // projeção daquele mês junto, não só com a conta nova. Um novembro que
+    // guardasse só o IPVA valeria menos que outubro na projeção e, adotado num
+    // fechamento, levaria as contas fixas embora — o bug do planejamento vazio
+    // de novo, por outra porta.
     const alvo = mesDaTela();
+    const semente =
+      !form.id && pos > 0 && !registroDaTela
+        ? projetarItens(itensEm(pos), avancoEm(pos))
+        : [];
+
     executar(() =>
-      form.id ? repo.editarLancamento(form.id, item) : repo.lancar(userId, alvo, item)
+      form.id
+        ? repo.editarLancamento(form.id, item)
+        : repo.lancar(userId, alvo, item, semente)
     );
     setForm(null);
   };
 
   const virarMes = async () => {
-    const planejado = futuro[0];
     const avancado = fecharMes(dados);
-    const proximo = planejado ?? { mesBase: avancado.mesBase, anoBase: avancado.anoBase };
+    const proximo = proximoPlanejado ?? { mesBase: avancado.mesBase, anoBase: avancado.anoBase };
     await executar(() =>
-      repo.fecharMesNoBanco(userId, dados, planejado ? [] : avancado.itens, proximo)
+      repo.fecharMesNoBanco(userId, dados, proximoPlanejado ? [] : avancado.itens, proximo)
     );
     setOffset(0);
     setConfirmarFechar(false);
@@ -420,7 +436,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     encerram: encerramEm(o),
   }));
 
-  const proximoMesLabel = futuro.length > 0 ? MESES[futuro[0].mesBase] : rotuloMes(mesBase, anoBase, 1).nome;
+  const proximoMesLabel = MESES[proximoDoCalendario.mesBase];
 
 
   return (
@@ -458,8 +474,8 @@ function CadernoContas({ session, tema, onAlternarTema }) {
                   <path d="M7.5 1L1.5 7.5L7.5 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
-              <button onClick={() => setOffset(Math.min(meses.length - 1, pos + 1))}
-                      disabled={pos >= meses.length - 1}
+              <button onClick={() => setOffset(Math.min(limiteFrente, pos + 1))}
+                      disabled={pos >= limiteFrente}
                       aria-label="Próximo mês"
                       className="w-9 h-9 rounded-full grid place-items-center bg-[var(--preenchido)] disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
                 <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden="true">
@@ -484,15 +500,16 @@ function CadernoContas({ session, tema, onAlternarTema }) {
           </div>
         )}
 
-        {aba === "mes" && !emHistorico && !emFuturo && !emPassadoVazio && <AvisoInstalar />}
+        {aba === "mes" && !foraDoAtual && <AvisoInstalar />}
 
-        {(emHistorico || emFuturo || emPassadoVazio) && aba === "mes" && (
+        {foraDoAtual && aba === "mes" && (
           <div className="mb-4 rounded-xl bg-[var(--cartao)] px-4 py-3">
             <div className="flex justify-between items-start gap-3">
               <span className="text-[13px] text-[var(--rotulo-2)] leading-snug">
                 {emHistorico ? "Mês fechado"
                   : emFuturo ? "Mês futuro planejado"
-                  : "Mês passado, ainda sem lançamento"} — o que você lançar
+                  : emPassadoVazio ? "Mês passado, ainda sem lançamento"
+                  : "Mês futuro, ainda sem planejamento"} — o que você lançar
                 aqui fica só nesse mês, sem mexer no atual.
               </span>
               <button onClick={() => setOffset(0)}
@@ -527,15 +544,15 @@ function CadernoContas({ session, tema, onAlternarTema }) {
         {aba === "mes" && (
           emHistorico || emFuturo ? (
             <AbaMesHistorico
-              entry={emHistorico ? entryHistorico : entryFuturo}
+              entry={registroDaTela}
               onEditar={abrirEdicao}
               onRemover={remover}
             />
           ) : (
             <AbaMes
               nomeDoMes={m.nome}
-              passado={emPassadoVazio}
-              offset={registroEm(pos) || emPassadoVazio ? 0 : pos - distanciaBase}
+              contexto={pos < 0 ? "passado" : pos > 0 ? "futuro" : "atual"}
+              offset={avancoEm(pos)}
               totalMes={totalEm(pos)}
               somaFixosMes={fixosEm(pos)}
               somaParcelasMes={parceladoEm(pos)}
@@ -573,16 +590,14 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             style={{ background: "var(--destaque)", color: "var(--sobre-destaque)" }}>
             Lançar conta
           </button>
-          {emHistorico || emFuturo || emPassadoVazio ? (
+          {foraDoAtual ? (
             <button onClick={() => setConfirmarAbrir(true)}
               className="px-5 py-3.5 rounded-xl text-[17px] bg-[var(--preenchido)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
               Abrir mês
             </button>
           ) : (
             <button onClick={() => setConfirmarFechar(true)}
-              disabled={pos !== 0}
-              title={pos !== 0 ? "só dá pra fechar o mês atual" : undefined}
-              className="px-5 py-3.5 rounded-xl text-[17px] bg-[var(--preenchido)] disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
+              className="px-5 py-3.5 rounded-xl text-[17px] bg-[var(--preenchido)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
               Fechar mês
             </button>
           )}
@@ -593,7 +608,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
         <ModalFecharMes
           mesAtual={rotuloMes(mesBase, anoBase, 0).nome}
           proximoMes={proximoMesLabel}
-          adotaFuturo={futuro.length > 0}
+          adotaFuturo={proximoPlanejado !== null}
           onConfirmar={virarMes}
           onCancelar={() => setConfirmarFechar(false)}
         />
