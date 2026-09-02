@@ -112,9 +112,17 @@ const paraLinha = (mesId, item) => ({
   total: item.tipo === "parcelado" ? item.total : null,
 });
 
-export async function lancar(userId, mes, item) {
-  const mesId = mes.id ?? (await garantirMes(userId, mes));
-  const { error } = await supabase.from("lancamentos").insert(paraLinha(mesId, item));
+// A `semente` só entra quando o mês está nascendo agora: é a projeção
+// daquele mês, materializada junto com o lançamento que o criou. Num mês que
+// já existe ela é ignorada — senão lançar duas contas seguidas em novembro
+// duplicaria as fixas ali.
+export async function lancar(userId, mes, item, semente = []) {
+  const existente = mes.id ?? (await buscarMes(userId, mes.anoBase, mes.mesBase));
+  const mesId = existente ?? (await garantirMes(userId, mes));
+  const linhas = existente ? [item] : [...semente, item];
+  const { error } = await supabase
+    .from("lancamentos")
+    .insert(linhas.map((it) => paraLinha(mesId, it)));
   if (error) throw error;
 }
 

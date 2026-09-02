@@ -3,6 +3,8 @@ import { faltam, ativoEm, rotuloMes, fecharMes, ehPlanejamentoVazio, ehAVista,
   deslocarMes,
   posDoMes,
   distanciaMeses,
+  baseDaProjecao,
+  projetarItens,
 } from "./caderno";
 
 describe("ehPlanejamentoVazio", () => {
@@ -252,5 +254,100 @@ describe("ehAVista", () => {
       anoBase: 2026,
     });
     expect(r.itens.map((i) => i.id)).toEqual(["2"]);
+  });
+});
+
+describe("posDoMes para frente", () => {
+  const mes = (mesBase, anoBase, itens = []) => ({ mesBase, anoBase, itens });
+
+  it("a posicao de um mes futuro nao muda quando ele passa a existir", () => {
+    // O espelho do caso do passado. Setembro atual, novembro tres... dois
+    // passos a frente: ele fica no passo 2 tendo registro ou nao. Antes ele
+    // pulava pro passo 1 assim que recebia um lancamento, e outubro sumia.
+    const alvo = { mesBase: 10, anoBase: 2026 };
+    const antes = { dados: mes(8, 2026), historico: [], futuro: [] };
+    const depois = { dados: mes(8, 2026), historico: [], futuro: [mes(10, 2026)] };
+    expect(posDoMes(alvo, antes)).toBe(2);
+    expect(posDoMes(alvo, depois)).toBe(2);
+  });
+
+  it("mantem alcancaveis os meses entre o atual e um planejamento distante", () => {
+    // Planejou novembro sem planejar outubro: outubro precisa ter passo
+    // proprio, senao a seta pula de setembro pra novembro e ele fica perdido.
+    const est = { dados: mes(8, 2026), historico: [], futuro: [mes(10, 2026)] };
+    expect(posDoMes({ mesBase: 9, anoBase: 2026 }, est)).toBe(1);
+    expect(posDoMes({ mesBase: 10, anoBase: 2026 }, est)).toBe(2);
+    expect(posDoMes({ mesBase: 11, anoBase: 2026 }, est)).toBe(3);
+  });
+
+  it("atravessa a virada do ano pra frente", () => {
+    const est = { dados: mes(10, 2026), historico: [], futuro: [] };
+    expect(posDoMes({ mesBase: 1, anoBase: 2027 }, est)).toBe(3);
+  });
+});
+
+describe("baseDaProjecao", () => {
+  const mes = (mesBase, anoBase, itens = []) => ({ mesBase, anoBase, itens });
+
+  it("sem planejamento, projeta a partir do mes atual", () => {
+    const est = { dados: mes(8, 2026), futuro: [] };
+    expect(baseDaProjecao({ mesBase: 10, anoBase: 2026 }, est)).toBe(est.dados);
+  });
+
+  it("projeta a partir do planejado mais recente antes do alvo", () => {
+    const out = mes(9, 2026);
+    const est = { dados: mes(8, 2026), futuro: [out] };
+    // dezembro parte de outubro, que e o ultimo mes que existe antes dele
+    expect(baseDaProjecao({ mesBase: 11, anoBase: 2026 }, est)).toBe(out);
+  });
+
+  it("ignora planejamento que vem DEPOIS do alvo", () => {
+    // Esse e o caso que quebrava: planejar dezembro nao pode servir de base
+    // pra outubro, que vem antes dele.
+    const est = { dados: mes(8, 2026), futuro: [mes(11, 2026)] };
+    expect(baseDaProjecao({ mesBase: 9, anoBase: 2026 }, est)).toBe(est.dados);
+  });
+
+  it("nao depende de futuro estar ordenado", () => {
+    const nov = mes(10, 2026);
+    const est = { dados: mes(8, 2026), futuro: [nov, mes(9, 2026)] };
+    expect(baseDaProjecao({ mesBase: 11, anoBase: 2026 }, est)).toBe(nov);
+  });
+
+  it("o proprio mes planejado nao e base dele mesmo", () => {
+    const est = { dados: mes(8, 2026), futuro: [mes(10, 2026)] };
+    expect(baseDaProjecao({ mesBase: 10, anoBase: 2026 }, est)).toBe(est.dados);
+  });
+});
+
+describe("projetarItens", () => {
+  const fixo = { id: "f", tipo: "fixo", nome: "Aluguel", valor: 350 };
+  const parc = { id: "p", tipo: "parcelado", nome: "Notebook", valor: 300, paga: 2, total: 10 };
+  const vista = { id: "v", tipo: "parcelado", nome: "Mercado", valor: 250, paga: 1, total: 1 };
+
+  it("n zero devolve tudo como esta", () => {
+    expect(projetarItens([fixo, parc, vista], 0)).toEqual([fixo, parc, vista]);
+  });
+
+  it("avanca a parcela em n casas", () => {
+    expect(projetarItens([parc], 3)[0].paga).toBe(5);
+  });
+
+  it("o fixo atravessa sem mudar", () => {
+    expect(projetarItens([fixo], 5)).toEqual([fixo]);
+  });
+
+  it("deixa pra tras o que ja acabou", () => {
+    // a compra a vista nao existe um mes a frente
+    expect(projetarItens([fixo, vista], 1).map((i) => i.id)).toEqual(["f"]);
+    // e a parcela de 2/10 acaba oito meses depois
+    expect(projetarItens([parc], 8).map((i) => i.id)).toEqual(["p"]);
+    expect(projetarItens([parc], 9)).toEqual([]);
+  });
+
+  it("nao muta os itens de origem", () => {
+    const original = [{ ...parc }];
+    projetarItens(original, 4);
+    expect(original[0].paga).toBe(2);
   });
 });

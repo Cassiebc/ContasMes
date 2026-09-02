@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "node e2e/workflow-completo.mjs",
-    "e2e:tudo": "node e2e/workflow-completo.mjs && node e2e/voltar-ao-passado.mjs && node e2e/esvaziar-mes.mjs && node e2e/virada-do-ano.mjs && node e2e/instalar.mjs && node e2e/conta-a-vista.mjs"
+    "e2e:tudo": "node e2e/workflow-completo.mjs && node e2e/voltar-ao-passado.mjs && node e2e/esvaziar-mes.mjs && node e2e/virada-do-ano.mjs && node e2e/instalar.mjs && node e2e/conta-a-vista.mjs && node e2e/planejar-mes-a-frente.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.0",

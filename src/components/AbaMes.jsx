@@ -6,7 +6,7 @@ export default function AbaMes({
   offset,
   totalMes, somaFixosMes, somaParcelasMes, somaAVistaMes,
   itensDoMes, onEditar, onRemover,
-  nomeDoMes, passado = false,
+  nomeDoMes, contexto = "atual",
 }) {
   return (
     <>
@@ -15,16 +15,23 @@ export default function AbaMes({
 
       {itensDoMes.length === 0 ? (
         <div className="bg-[var(--cartao)] rounded-xl px-5 py-8 text-center">
-          {/* Num mês do passado o caderno não está em branco — só esse mês
+          {/* Fora do mês atual o caderno não está em branco — só esse mês
               está. Dizer "caderno em branco" ali assustaria à toa. */}
           <p className="text-[17px] mb-1">
-            {passado ? `Nada lançado em ${nomeDoMes}.` : "Caderno em branco."}
+            {contexto === "atual"
+              ? "Caderno em branco."
+              : `Nada ${contexto === "passado" ? "lançado" : "previsto"} em ${nomeDoMes}.`}
           </p>
           <p className="text-[13px] text-[var(--rotulo-2)] leading-relaxed">
-            {passado ? (
+            {contexto === "passado" ? (
               <>
                 Toque em <span className="text-[var(--rotulo)]">lançar conta</span> para
                 registrar o que você pagou nesse mês. O mês atual não muda.
+              </>
+            ) : contexto === "futuro" ? (
+              <>
+                Toque em <span className="text-[var(--rotulo)]">lançar conta</span> para
+                já deixar essa despesa planejada aqui. O mês atual não muda.
               </>
             ) : (
               <>
