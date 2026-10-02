@@ -23,7 +23,8 @@ projeto, para a próxima sessão não perder o contexto.
   mesma decisão, e deixe isso explícito ao pedir o aval dela. Push em `dev`
   não publica: gera só o Preview.
 - Rode `npm test` e `npm run build` antes de propor um commit. Se a mudança
-  toca na linha do tempo, no banco ou na tela, rode também `npm run e2e`.
+  toca na linha do tempo, no banco ou na tela, rode também `npm run e2e:local`
+  (não pede conta) e, havendo conta de teste configurada, `npm run e2e`.
 - Publicar não termina no push: confira em produção **por conteúdo**, não só
   pelo hash do bundle, e diga o que foi verificado.
 
@@ -51,10 +52,13 @@ estrutura de tabela. Qualquer `alter table` precisa ser rodado pela usuária no
 SQL Editor do Supabase — entregue o comando pronto e espere ela confirmar
 antes de escrever o código que depende da coluna nova.
 
-**Testar no navegador exige conta.** As telas úteis ficam atrás do login. Não
-existe banco de desenvolvimento separado: testes end-to-end usam o Supabase de
-produção. Combine com a usuária antes de criar conta de teste, e avise que ela
-precisará apagá-la depois pelo painel (a chave publishable não remove usuário).
+**Testar no navegador contra o Supabase exige conta.** As telas úteis ficam
+atrás do login, e não existe banco de desenvolvimento separado: `npm run e2e`
+usa o Supabase de produção. Combine com a usuária antes de criar conta de
+teste, e avise que ela precisará apagá-la depois pelo painel (a chave
+publishable não remove usuário). Sem conta, use `npm run e2e:local`: a tela
+real contra um banco em memória (`e2e/local/`). Ele não prova RLS nem as
+constraints de verdade — diga isso ao relatar.
 
 **O banco é `meses` + `lancamentos`, não mais um jsonb.** Todo acesso passa
 por `src/lib/repositorio.js`; `App.jsx` não fala com o Supabase direto. A
@@ -73,23 +77,38 @@ sua parte e bastava uma esquecer. Hoje o banco recusa dado incoerente
 uma cópia própria. Ao mexer aqui, mantenha as duas coisas: regra no banco
 quando der, e uma leitura só como fonte de verdade.
 
-**A linha do tempo anda pelo calendário para trás, por registros para
-frente.** Um passo atrás é sempre o mês anterior, exista ou não; um passo à
-frente conta os meses planejados. Se mexer nisso, lembre que `offset` guarda
-**passos**, não meses — e que uma escrita pode reordenar a linha do tempo, por
-isso `executar()` reancora a posição pelo mês (`posDoMes`) depois de reler.
-Sem a reancoragem, lançar num mês do passado joga a tela para outro mês.
+**Mês à frente é plano, não cópia.** Lançar num mês futuro grava só aquele
+lançamento, num mês marcado `planejado`; o resto do mês é calculado por
+`itensNoMes()` a partir do mês atual. Já foi cópia do mês inteiro, e a cópia
+parava de acompanhar o mês atual e duplicava. Não materialize projeção num mês
+à frente. O mês atual nunca é plano (o banco recusa): quem promove um plano —
+fechar ou abrir mês — soma antes as contas que ele herdava.
+
+**Quem sabe se um mês existe é o banco, não a tela.** A tela pode estar
+atrasada (toque duplo, outro aparelho). `garantirMes()` devolve `criado` e
+`planejado` lidos do banco, `fecharMesNoBanco()` só fecha se o mês ainda for o
+atual lá, e `executar()` aceita uma escrita por vez. Não decida "é novo" por
+faltar `id` no objeto que veio da tela.
+
+**A linha do tempo anda pelo calendário, nos dois sentidos.** Um passo é
+sempre um mês, exista registro ou não. `offset` guarda a distância em meses
+até o atual — e uma escrita pode mudar qual é o atual, por isso `executar()`
+reancora a posição pelo mês (`posDoMes`) depois de reler. Sem a reancoragem,
+lançar num mês do passado joga a tela para outro mês.
 
 ## Como testar de verdade
 
-`npm test` cobre só as funções puras, e **nenhum bug de consistência deste
-projeto foi pego por ele**. O que pegou foi ponta a ponta: Playwright
-dirigindo o app real e conferindo o **banco** a cada passo. A suíte está em
-`e2e/` — leia `e2e/README.md`, que explica as variáveis `E2E_*`.
+`npm test` cobre as funções puras e o repositório contra um banco em memória
+(`src/lib/bancoFalso.js`), que deixa rodar duas escritas ao mesmo tempo. Antes
+de ele existir, **nenhum bug de consistência deste projeto foi pego por
+teste unitário**. O que pegou foi ponta a ponta: Playwright dirigindo o app
+real e conferindo o **banco** a cada passo. A suíte está em `e2e/` — leia
+`e2e/README.md`, que explica as variáveis `E2E_*`.
 
 ```bash
-npm run e2e       # fluxo completo, 55 checagens
-npm run e2e:tudo  # os cinco arquivos
+npm run e2e:local # a tela real, banco em memoria; nao pede conta
+npm run e2e       # contra o Supabase: fluxo completo, 55 checagens
+npm run e2e:tudo  # os sete arquivos de e2e/
 E2E_URL=https://caderno-auth.vercel.app npm run e2e   # contra producao
 ```
 
@@ -106,7 +125,11 @@ correção anterior. Cenários que já quebraram e valem revisitar:
   (a seta nascia desabilitada e não havia como corrigir o mês errado);
 - lançar num mês do passado que ainda não existia (a tela pulava para outro
   mês, porque a linha do tempo se reordenou sob o `offset`);
-- voltar de janeiro para dezembro (o título virava "undefined").
+- voltar de janeiro para dezembro (o título virava "undefined");
+- lançar num mês à frente e depois lançar no atual (a conta nova não chegava à
+  projeção);
+- tocar duas vezes em "Fechar mês" ou "Salvar" (o mês seguinte duplicava);
+- "abrir mês" num mês à frente (abria sem as contas fixas).
 
 ## Ao entregar
 

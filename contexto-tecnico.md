@@ -1,7 +1,7 @@
 # Caderno de Contas — contexto técnico
 
 Documento de contexto para retomar o projeto em novas sessões.
-Última atualização: 2026-09-02.
+Última atualização: 2026-10-02.
 
 Se você é uma sessão nova: leia este arquivo inteiro antes de mexer em
 qualquer coisa. Várias decisões aqui parecem estranhas e são deliberadas —
@@ -60,9 +60,12 @@ src/
   lib/
     caderno.js      helpers puros (MESES, brl, ativoEm, ehAVista, rotuloMes,
                     fecharMes, deslocarMes, distanciaMeses, posDoMes,
-                    baseDaProjecao, projetarItens)
+                    projetarItens, itensNoMes, completarAoAbrir)
     caderno.test.js testes da regra de negócio
     repositorio.js  todo o acesso ao banco; a tela não conhece SQL
+    repositorio.test.js  o repositório contra o banco de mentira: ordem das
+                    escritas, toque duplo, aparelho com a tela atrasada
+    bancoFalso.js   Supabase em memória, só com o que o repositório usa
     tema.js         hook useTema (claro/escuro + persistência)
     atualizacao.js  detecta versão nova publicada e recarrega o app
     instalacao.js   hook useInstalacao (convite de instalar o PWA)
@@ -90,6 +93,8 @@ e2e/                testes de ponta a ponta (Playwright) — veja e2e/README.md
   instalar.mjs            o convite de instalar o PWA
   conta-a-vista.mjs       a compra que nao atravessa o mes
   planejar-mes-a-frente.mjs  lancar num mes futuro sem fechar o atual
+  local/            a tela real contra o banco de mentira: sem conta, sem
+                    producao (supabase.js, vite.config.js, lancar-a-frente.mjs)
 public/
   manifest.json     standalone, portrait, ícones normais + maskable, screenshots
   sw.js             service worker, cache "caderno-v1", network-first
@@ -105,8 +110,10 @@ Duas tabelas, criadas por `schema-v2.sql`:
 create table public.meses (
   id uuid primary key, user_id uuid, ano int, mes int,   -- mes: 0 = janeiro
   atual boolean not null default false,
+  planejado boolean not null default false,   -- plano x retrato, veja abaixo
   fechado_em timestamptz,
-  unique (user_id, ano, mes)
+  unique (user_id, ano, mes),
+  constraint atual_nao_e_planejado check (not (atual and planejado))
 );
 create unique index meses_um_atual_por_usuario
   on public.meses (user_id) where atual;
@@ -124,6 +131,8 @@ O que o banco garante, e antes dependia do código lembrar:
 - **mês não se repete** (`unique (user_id, ano, mes)`) — a duplicata de
   "agosto" que aparecia ao restaurar backup por cima do histórico;
 - **um único mês atual** por pessoa (índice único parcial);
+- **o mês atual nunca é plano** (`atual_nao_e_planejado`) — o mês atual é
+  sempre o mês inteiro; quem o promove tem de completá-lo antes;
 - **parcela coerente** — não existe "5 de 3", nem fixo com número de parcela;
 - **valor sempre positivo**, nome não vazio.
 
@@ -161,17 +170,27 @@ nova no banco, ela nasce neste arquivo, não na tela.
 | função | o que faz |
 | --- | --- |
 | `carregar(userId)` | lê tudo e devolve `{ meses, dados, historico, futuro }`. Também **apaga** meses futuros vazios (veja regras de negócio). |
-| `lancar(userId, mes, item)` | insere um lançamento; cria o mês se ele ainda não existir |
+| `lancar(userId, mes, item)` | insere um lançamento; cria o mês se ele ainda não existir (como plano, se `mes.planejado`) |
 | `editarLancamento(id, item)` | atualiza um lançamento |
 | `removerLancamento(id)` | apaga um lançamento |
 | `apagarMes(mesId)` | apaga o mês e, em cascata, seus lançamentos |
 | `definirAtual(userId, mesId)` | move a marca de `atual` para um mês que já existe |
-| `abrirMesNoBanco(userId, mes)` | idem, mas **cria o mês** se preciso — é o "abrir mês" num mês do passado que nunca foi registrado |
-| `fecharMesNoBanco(...)` | marca `fechado_em` e passa `atual` pro seguinte, criando-o com as parcelas avançadas |
+| `abrirMesNoBanco(userId, mes, completar)` | idem, mas **cria o mês** se preciso — é o "abrir mês" num mês que nunca foi registrado. Pra frente, antes completa os planos com as contas que eles herdavam |
+| `fecharMesNoBanco(...)` | marca `fechado_em` e passa `atual` pro seguinte: cria-o com as parcelas avançadas, soma-as a um plano, ou adota um retrato como está |
 | `substituirTudo(userId, caderno)` | restaurar backup: troca o caderno inteiro |
 | `migrarDoFormatoAntigo(userId)` | traz os dados da tabela `cadernos` (jsonb) pro modelo novo |
 
-Duas defesas que vale não remover sem entender:
+Defesas que vale não remover sem entender:
+
+- **Quem diz se um mês nasceu agora é o banco**, não a tela. `garantirMes()`
+  devolve `criado` e `planejado` lidos de lá, e é com isso que o fechamento
+  decide se soma as contas. Antes cada operação deduzia do que a tela sabia
+  ("veio sem id, então é novo"), e a tela pode estar atrasada.
+- **`fecharMesNoBanco` só fecha se o mês ainda for o atual no banco**
+  (`.eq("atual", true)` no primeiro update). Quem chega depois — o segundo
+  toque, outro aparelho — sai sem escrever. Se algo falhar no meio, o que
+  entrou é desfeito e a marca de atual volta, senão o caderno ficaria sem mês
+  atual e não abriria mais.
 
 - `migrarDoFormatoAntigo` guarda a promessa em andamento e devolve a mesma
   para quem chamar durante a migração. Sem isso, duas migrações concorrentes
@@ -242,7 +261,7 @@ banco ou não:
 | --- | --- | --- |
 | `< 0` | o registro daquele mês no histórico; se não houver, mês vazio (nada é projetado para trás) | naquele mês, criando-o se preciso |
 | `0` | `dados` — o mês atual | no mês atual |
-| `> 0` | o registro planejado daquele mês; se não houver, a projeção calculada por `ativoEm()` a partir de `baseDaProjecao()` | naquele mês, criando-o **com a projeção junto** |
+| `> 0` | `itensNoMes()`: o último retrato até aquele mês, projetado, mais o que foi lançado nos planos dali em diante | naquele mês, criando-o **como plano**, só com esse lançamento |
 
 A simetria é o ponto: a posição de um mês não muda por ele passar a existir,
 nem por um vizinho deixar de existir. Veja "A linha do tempo anda pelo
@@ -257,12 +276,18 @@ foi se afastando dele. Depois de reler, `reancorar()` reposiciona o `offset`
 no mês que estava na tela: uma escrita pode reordenar a linha do tempo, e o
 mesmo passo passaria a apontar pra outro mês.
 
+**Uma escrita por vez.** `executar()` tem uma trava (`ocupadoRef`): o segundo
+toque no "Salvar" ou no "Fechar mês" chega antes de a tela redesenhar, com o
+mesmo retrato do caderno, e gravava tudo de novo. É ref e não estado porque
+estado só muda no próximo desenho — os dois toques ainda o veriam livre.
+
 **Fechar mês**: marca `fechado_em` no mês atual e passa `atual` pro **mês
 seguinte do calendário** — não pro `futuro[0]`, que era o bug de fechar
-setembro e cair em novembro quando só novembro estava planejado. Se esse mês
-seguinte já existe (foi planejado), ele é adotado com o que tiver dentro; se
-não, é criado com `fecharMes()` — cada parcela avança uma casa e as que
-acabaram somem.
+setembro e cair em novembro quando só novembro estava planejado. As contas
+avançadas por `fecharMes()` (cada parcela uma casa, as que acabaram somem) vão
+sempre, e o repositório decide pelo que está no banco: mês que não existe é
+criado com elas; **plano** as recebe por cima do que já tinha lançado e deixa
+de ser plano; **retrato** é adotado como está.
 
 **Abrir mês**: só muda qual mês tem `atual = true`. Não move nada; o resto se
 reorganiza porque "fechado" e "planejado" saem da comparação de datas.
@@ -435,26 +460,66 @@ A correção é a mesma do passado, e agora as duas metades são a mesma regra:
 `registroEm()` procura o mês pela data nas duas listas, em vez de indexar
 `futuro` por posição.
 
-**`baseDaProjecao(alvo, { dados, futuro })`** decide de onde a projeção de um
-mês parte: o último mês que **existe antes dele** — o planejado mais recente,
-ou o atual quando não há planejamento no meio. Antes a projeção partia sempre
+**A projeção de um mês só olha para o que vem antes dele.** Já partiu sempre
 do último planejado da lista, então planejar dezembro fazia novembro projetar
-a partir de dezembro, que vem depois dele.
+a partir de dezembro. Hoje quem cuida disso é `itensNoMes()`, descrita logo
+abaixo.
 
-**`virarMes()` fecha no próximo do calendário**, procurando em `futuro` o mês
-que de fato é o seguinte, em vez de pegar `futuro[0]`.
+**`virarMes()` fecha no próximo do calendário** (`proximoDoCalendario`), em
+vez de pegar `futuro[0]`.
 
-**Lançar num mês à frente materializa a projeção junto.** `projetarItens()`
-gera os itens daquele mês com as parcelas já na casa certa, e `repo.lancar()`
-os grava como "semente" quando o mês está nascendo. Sem isso, um novembro
-guardando só o IPVA valeria menos que outubro na projeção e, ao ser adotado
-num fechamento, levaria as contas fixas embora — o bug do planejamento vazio
-entrando por outra porta.
+### Plano e retrato: o que um mês à frente guarda
 
-O preço disso, e é uma escolha consciente: o mês planejado é um **retrato**,
-não uma fórmula. Se o aluguel mudar de valor em setembro depois de novembro já
-ter sido planejado, novembro fica com o valor antigo até ser editado. É o
-mesmo comportamento que `fecharMes()` já tinha ao materializar o mês seguinte.
+Um mês à frente pode ser duas coisas, e a coluna `meses.planejado` diz qual:
+
+- **Plano** (`planejado = true`): guarda **só o que foi lançado nele** — o
+  IPVA de novembro. O resto do mês não está gravado em lugar nenhum: é
+  calculado na hora, a partir do mês atual.
+- **Retrato** (`planejado = false`): o mês inteiro, gravado. É o mês atual, é
+  todo mês do passado, e é o que sobra à frente quando se volta com "abrir
+  mês" — outubro já vivido não é recalculado só porque setembro voltou a ser
+  o atual.
+
+`itensNoMes(alvo, { dados, futuro })` faz a conta: parte do **último retrato
+que existe até o mês pedido** e soma os planos dali em diante, cada item já na
+parcela daquele mês. Consequências que valem saber:
+
+- conta nova no mês atual aparece em todo mês à frente, planejado ou não;
+- o que nasce num plano segue adiante: fixa lançada em novembro está em
+  dezembro; parcelada conta a partir de novembro; à vista fica só em novembro;
+- o que vem de outro mês sai marcado `herdado`, e a tela mostra **sem o × e
+  sem abrir pra edição** — mexer ali mudaria o mês de origem sem avisar.
+  Editar ou tirar é no mês em que a conta foi lançada;
+- como a parcela já chega na casa certa, `Secao` não recebe mais `offset`.
+
+**Isto já foi diferente, e a versão anterior custou caro.** De 02/09 a 02/10
+de 2026 o mês à frente era sempre retrato: lançar em outubro gravava ali uma
+cópia de setembro inteiro (a "semente"). Dois problemas, os dois relatados
+pela usuária depois de um mês de uso:
+
+1. a cópia parava no tempo — o que entrasse em setembro depois não chegava a
+   outubro nem a mês nenhum adiante. A doc da época chamava isso de "escolha
+   consciente"; na prática era o app parando de projetar;
+2. a cópia dobrava. Quem decidia se o mês "era novo" era a tela, então um
+   toque duplo no Salvar gravava a semente duas vezes, e um toque duplo no
+   Fechar mês (ou um aparelho com a tela atrasada) despejava as contas
+   avançadas por cima de um mês que já existia.
+
+Não volte a materializar a projeção num mês à frente. Se um dia precisar de
+"neste mês a internet custa outro valor", o caminho é um lançamento próprio
+naquele mês, não uma cópia do mês inteiro.
+
+**"Abrir mês" pra frente completa os planos antes.** O mês atual é sempre
+retrato (o banco recusa o contrário), então marcar um plano como atual do
+jeito que está abriria o mês só com o IPVA. `completarAoAbrir()` lista o alvo e
+os planos que ficam pra trás dele, cada um com as contas que herdava, e
+`abrirMesNoBanco()` as grava e tira a marca de plano — só do que ainda é plano
+no banco, pra não somar duas vezes.
+
+**Dados de antes da coluna.** Meses à frente gravados no modelo antigo são
+retratos (o padrão da coluna é `false`) e continuam se comportando como antes:
+parados. Pra voltarem à projeção, "Descartar este planejamento" e lançar de
+novo. Backup JSON antigo, sem a marca, restaura do mesmo jeito.
 
 ## Atualização depois de um deploy
 
@@ -507,15 +572,26 @@ CSP em `vercel.json` — senão o app carrega mas nenhuma requisição passa.
 Dois níveis, e o segundo é o que importa.
 
 ```bash
-npm test        # Vitest: funcoes puras de lib/caderno.js
+npm test        # Vitest: funcoes puras + o repositorio contra o banco de mentira
 npm run build   # o build tem que passar antes de qualquer commit
-npm run e2e     # Playwright: o fluxo completo, 55 checagens
+npm run e2e:local  # Playwright na tela real, banco de mentira: sem conta
+npm run e2e     # Playwright contra o Supabase: o fluxo completo, 55 checagens
 npm run e2e:tudo  # os sete arquivos de e2e/
 ```
 
-`npm test` cobre só as funções puras — cálculo de parcela, virada de mês,
-rótulo do mês, `posDoMes`. É rápido e vale rodar sempre, mas **nenhum dos bugs
-de consistência do projeto foi pego por ele**.
+`npm test` cobre as funções puras — cálculo de parcela, virada de mês, rótulo
+do mês, `posDoMes`, `itensNoMes` — e, desde 2026-10, o repositório rodando
+contra `bancoFalso.js`. Até essa data ele só testava função pura, e **nenhum
+dos bugs de consistência do projeto tinha sido pego por ele**: eles moram na
+ordem das escritas. O banco de mentira executa cada consulta só quando é
+aguardada, então duas chamadas concorrentes se intercalam como na rede — foi
+assim que a duplicação do fechamento foi reproduzida antes de ser corrigida.
+
+`npm run e2e:local` sobe o app de verdade trocando só `src/supabase.js` pelo
+banco de mentira (`e2e/local/`), e dirige a tela com o Playwright. Não pede
+conta e não toca em produção, então dá pra rodar sempre. O que ele **não**
+prova: RLS, constraints reais e o comportamento do Supabase de verdade — o
+banco de mentira só imita mês único, um atual por pessoa e atual-não-é-plano.
 
 O que pegou foi ponta a ponta: Playwright dirigindo o app real contra o
 Supabase e conferindo **o banco** a cada passo, não a tela. A suíte está em
@@ -550,7 +626,15 @@ tempo:
 - navegar até um mês à frente e lançar → a conta caía no mês atual, porque a
   zona de projeção não tinha registro próprio;
 - planejar novembro sem planejar outubro → outubro sumia da linha do tempo, e
-  fechar setembro pulava direto para novembro.
+  fechar setembro pulava direto para novembro;
+- lançar em outubro e depois lançar em setembro → a conta de setembro não
+  chegava à projeção, porque outubro guardava uma cópia parada;
+- tocar duas vezes em "Fechar mês" ou em "Salvar" → o mês seguinte nascia com
+  tudo duplicado;
+- fechar o mês num aparelho com a tela atrasada, depois de planejar o mês
+  seguinte em outro → as contas entravam por cima do que já estava lá;
+- "abrir mês" num mês à frente → abria vazio, ou só com o que tinha sido
+  lançado nele.
 
 ## Manutenção: as coisas que mais aparecem
 

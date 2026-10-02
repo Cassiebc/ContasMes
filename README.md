@@ -177,8 +177,17 @@ Para trás dá para ir mesmo em meses que você nunca registrou — eles abrem
 vazios, prontos para receber o que você pagou. É a saída para quando o mês
 atual ficou adiantado demais: volte até o mês certo e toque em **abrir mês**.
 
-O detalhe que faz isso ser seguro: o que você mexe num mês passado ou futuro
-fica **só naquele mês**. Não recalcula nem bagunça os outros.
+O detalhe que faz isso ser seguro: o que você mexe num mês passado fica **só
+naquele mês**. Não recalcula nem bagunça os outros.
+
+Para frente funciona como planejamento. Navegue até o mês e toque em **lançar
+conta**: ela **começa naquele mês**, sem mexer no atual. Se for de todo mês,
+segue pelos meses seguintes; se for parcelada, a primeira parcela é a daquele
+mês; se for à vista, fica só nele. O resto do mês continua acompanhando o mês
+atual — uma conta nova lançada hoje aparece lá também.
+
+Num mês à frente, as contas que vêm de outro mês aparecem sem o ×. Para mudar
+ou tirar uma delas, vá ao mês em que ela foi lançada.
 
 ### Fechar mês
 
@@ -188,8 +197,8 @@ do jeito que estava.
 
 Só dá para fechar o mês atual — nos outros o botão fica apagado.
 
-Se você já tinha planejado o mês seguinte (lançou algo nele antes de chegar
-lá), fechar o mês simplesmente adota esse planejamento em vez de recalcular.
+Se você já tinha lançado algo no mês seguinte antes de chegar lá, isso fica:
+as contas que avançam se juntam ao que você tinha lançado nele.
 
 ### Abrir mês
 

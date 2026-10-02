@@ -19,11 +19,11 @@ const h = (token) => ({ apikey: KEY, Authorization: `Bearer ${token}`, 'Content-
 // testes ja usam: { dados, historico, futuro }.
 export async function ler(token) {
   const r = await fetch(
-    `${URL}/rest/v1/meses?select=id,ano,mes,atual,fechado_em,lancamentos(id,nome,valor,tipo,paga,total)&order=ano,mes`,
+    `${URL}/rest/v1/meses?select=id,ano,mes,atual,planejado,fechado_em,lancamentos(id,nome,valor,tipo,paga,total)&order=ano,mes`,
     { headers: h(token) });
   const linhas = await r.json();
   const meses = linhas.map((m) => ({
-    id: m.id, mesBase: m.mes, anoBase: m.ano, atual: m.atual,
+    id: m.id, mesBase: m.mes, anoBase: m.ano, atual: m.atual, planejado: m.planejado,
     itens: (m.lancamentos ?? []).map((l) => ({
       id: l.id, nome: l.nome, valor: Number(l.valor), tipo: l.tipo,
       ...(l.tipo === 'parcelado' ? { paga: l.paga, total: l.total } : {}),

@@ -98,3 +98,21 @@ create policy "dono apaga lancamentos" on public.lancamentos
 alter table public.lancamentos add column if not exists origem_id text;
 create unique index if not exists lancamentos_origem
   on public.lancamentos (mes_id, origem_id) where origem_id is not null;
+
+-- Mês à frente: plano ou retrato (2026-10).
+--
+-- Um PLANO guarda só o que foi lançado adiantado naquele mês; o resto é
+-- calculado pelo app a partir do mês atual. Um RETRATO é o mês inteiro. Sem a
+-- marca, o app gravava uma cópia do mês atual em todo mês planejado — a cópia
+-- parava de acompanhar o que entrava depois, e duplicava.
+--
+-- O padrão é retrato, então os meses que já existiam não mudam de sentido.
+alter table public.meses
+  add column if not exists planejado boolean not null default false;
+
+-- O mês atual é sempre o mês inteiro. Quem promove um plano a atual tem de
+-- completá-lo antes; se esquecer, o banco recusa em vez de abrir o mês só com
+-- o que foi lançado nele.
+alter table public.meses drop constraint if exists atual_nao_e_planejado;
+alter table public.meses
+  add constraint atual_nao_e_planejado check (not (atual and planejado));

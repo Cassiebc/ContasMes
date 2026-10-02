@@ -4,7 +4,23 @@ Playwright dirigindo o app real e conferindo o **banco** a cada passo, não só
 a tela. Foi o que pegou todos os bugs de consistência do projeto — `npm test`
 (Vitest) cobre as funções puras e não pegou nenhum deles.
 
-## ⚠️ Antes de rodar
+## Sem conta: `npm run e2e:local`
+
+`e2e/local/` roda a tela de verdade contra um banco em memória. O script sobe
+o Vite sozinho, trocando só `src/supabase.js` por `e2e/local/supabase.js`, que
+embrulha o `src/lib/bancoFalso.js` e já entra com uma sessão aberta. Não pede
+conta, não toca em produção e não precisa do `npm run dev` em outra janela.
+
+```bash
+npm run e2e:local   # lancar-a-frente.mjs, 43 checagens
+```
+
+O teste lê o que foi gravado por `window.__banco`. O que ele **não** prova é o
+Supabase de verdade: RLS, constraints reais, latência. O banco de mentira só
+imita mês único por pessoa, um mês atual e "o atual nunca é plano". Mudança que
+dependa de outra regra do banco precisa dos testes de baixo.
+
+## ⚠️ Antes de rodar os testes contra o Supabase
 
 **Estes testes apagam e recriam os meses do usuário logado.** Não existe banco
 de desenvolvimento separado: eles rodam contra o Supabase de produção.
@@ -64,7 +80,8 @@ deste projeto foi conferida.
 | `virada-do-ano.mjs` | Voltar de janeiro para dezembro do ano anterior. O título já virou "undefined" aqui. |
 | `instalar.mjs` | O convite de instalar o PWA: Android, iPhone, dispensar e reencontrar, e o caso de já estar instalado. |
 | `conta-a-vista.mjs` | A conta à vista, que no banco é a parcela única (1 de 1): grava 1/1, não vai pra projeção, não atravessa o fechamento, fica no mês fechado, e editar não a transforma em parcelada. |
-| `planejar-mes-a-frente.mjs` | Navegar até um mês futuro e lançar ali sem mexer no atual: a conta cai no mês certo, o mês nasce com a projeção junto, os meses do meio continuam alcançáveis, e fechar o atual vai pro próximo do calendário. |
+| `planejar-mes-a-frente.mjs` | Navegar até um mês futuro e lançar ali sem mexer no atual: a conta cai no mês certo, o mês nasce como plano só com ela, os meses do meio continuam alcançáveis, e fechar o atual vai pro próximo do calendário. |
+| `local/lancar-a-frente.mjs` | (banco de mentira) Lançar à frente e depois no atual, e a conta nova chegar à projeção; o que vem de outro mês aparecer sem o ×; toque duplo no Salvar e no Fechar mês não duplicar; fechar somando ao plano; fixa lançada à frente seguir adiante; "abrir mês" num mês à frente trazer as contas todas; descartar planejamento. |
 
 ## Como são escritos
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 import Login from "./Login.jsx";
-import { MESES, ativoEm, faltam, rotuloMes, fecharMes, deslocarMes, posDoMes, mesmoMes, distanciaMeses, ehAVista, projetarItens, baseDaProjecao } from "./lib/caderno";
+import { MESES, faltam, rotuloMes, fecharMes, deslocarMes, posDoMes, mesmoMes, distanciaMeses, ehAVista, itensNoMes, completarAoAbrir } from "./lib/caderno";
 import * as repo from "./lib/repositorio.js";
 import { useTema } from "./lib/tema.js";
 import AbaMes from "./components/AbaMes.jsx";
@@ -58,6 +58,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   // Qual mês do calendário está na tela agora — usado pra reancorar a
   // posição depois de uma escrita que reordena a linha do tempo.
   const mesVisivelRef = useRef(null);
+  const ocupadoRef = useRef(false);
   const [form, setForm] = useState(null);
   const [confirmarFechar, setConfirmarFechar] = useState(false);
   const [confirmarAbrir, setConfirmarAbrir] = useState(false);
@@ -119,7 +120,14 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   // banco. Antes o estado da tela era atualizado por conta própria e ia
   // separando da verdade a cada operação esquecida; agora o banco é quem
   // manda, e a tela é sempre o reflexo dele.
+  //
+  // Uma escrita por vez. O segundo toque no "Salvar" ou no "Fechar mês" chega
+  // antes de a tela redesenhar, com o mesmo retrato do caderno que o primeiro
+  // — e gravava tudo de novo. A trava é uma ref porque `salvando` é estado, e
+  // estado só muda no próximo desenho: os dois toques ainda o veriam falso.
   const executar = async (acao) => {
+    if (ocupadoRef.current) return false;
+    ocupadoRef.current = true;
     setSalvando(true);
     setSalvo(false);
     try {
@@ -141,6 +149,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
       }
       return false;
     } finally {
+      ocupadoRef.current = false;
       setSalvando(false);
     }
   };
@@ -201,22 +210,16 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const emFuturo = pos > 0 && registroDaTela !== null;
   const idxFuturo = emFuturo ? futuro.findIndex((m) => m.id === registroDaTela.id) : null;
 
-  // Quantas casas a parcela andou desde o mês de onde a projeção partiu. Num
-  // mês com registro é zero: ali os itens já estão na parcela certa.
-  const baseEm = (o) => baseDaProjecao(mesEm(o), { dados, futuro });
-  const avancoEm = (o) => {
-    if (o <= 0 || registroEm(o)) return 0;
-    return distanciaMeses(baseEm(o), mesEm(o));
-  };
-
+  // O que cai em cada mês. No passado e no atual é o que está gravado; pra
+  // frente é conta de `itensNoMes`, que já devolve cada parcela na casa certa
+  // daquele mês.
+  //
   // Projeção fala do que ainda vai acontecer; do passado não se infere nada.
   // Um mês atrás sem registro é um mês sem informação — abre vazio, não com
   // as contas de hoje espelhadas pra trás.
   const itensEm = (o) => {
-    const reg = registroEm(o);
-    if (reg) return reg.itens;
-    if (o < 0) return [];
-    return baseEm(o).itens.filter((it) => ativoEm(it, avancoEm(o)));
+    if (o > 0) return itensNoMes(mesEm(o), { dados, futuro });
+    return registroEm(o)?.itens ?? [];
   };
   const somaEm = (o, cabe) => itensEm(o).filter(cabe).reduce((s, i) => s + i.valor, 0);
   const fixosEm = (o) => somaEm(o, (i) => i.tipo === "fixo");
@@ -229,37 +232,30 @@ function CadernoContas({ session, tema, onAlternarTema }) {
     const { mesBase: mb, anoBase: ab } = mesEm(o);
     return { nome: MESES[mb], ano: ab };
   };
-  const encerramEm = (o) => {
-    // "última parcela: X" é aviso de compromisso que vai sair da conta. Uma
-    // compra à vista nunca esteve nos meses seguintes, então anunciá-la aqui
-    // seria ruído.
-    const podeEncerrar = (i) => i.tipo === "parcelado" && !ehAVista(i);
-    const reg = registroEm(o);
-    if (reg) return reg.itens.filter((i) => podeEncerrar(i) && i.paga === i.total);
-    if (o < 0) return [];
-    const rel = avancoEm(o);
-    return baseEm(o).itens.filter(
-      (i) => podeEncerrar(i) && ativoEm(i, rel) && !ativoEm(i, rel + 1)
-    );
-  };
+  // "última parcela: X" é aviso de compromisso que vai sair da conta. Uma
+  // compra à vista nunca esteve nos meses seguintes, então anunciá-la aqui
+  // seria ruído.
+  const encerramEm = (o) =>
+    itensEm(o).filter((i) => i.tipo === "parcelado" && !ehAVista(i) && i.paga === i.total);
 
-  // A lista da aba "projeção" vai até o planejamento mais distante, mais o que
-  // ainda faltar da parcela mais longa que houver lá.
-  const ultimoConcreto = futuro.length > 0 ? futuro[futuro.length - 1] : dados;
-  const horizonteComputado = Math.max(
-    3,
-    ...ultimoConcreto.itens.filter((i) => i.tipo === "parcelado").map((i) => faltam(i))
+  // A lista da aba "projeção" vai até onde alcança a parcela mais longa, saia
+  // ela do mês atual ou de um mês à frente — e nunca menos que três meses
+  // depois do último mês que tem alguma coisa lançada.
+  const alcanceDasParcelas = [dados, ...futuro].flatMap((mes) =>
+    mes.itens
+      .filter((i) => i.tipo === "parcelado")
+      .map((i) => distanciaMeses(dados, mes) + faltam(i))
   );
-  const meses = Array.from(
-    { length: Math.min(avancoDoMaisDistante + horizonteComputado + 1, 13) },
-    (_, i) => i
-  );
+  const horizonte = Math.max(avancoDoMaisDistante + 3, ...alcanceDasParcelas);
+  const meses = Array.from({ length: Math.min(horizonte + 1, 13) }, (_, i) => i);
 
   // Em que mês a alteração cai: o mês que está na tela, sempre. Se ele ainda
   // não existe no banco vai sem `id`, e o repositório o cria. Antes a zona de
   // projeção caía no mês atual — era o bug de navegar até novembro, lançar a
   // conta e ela aparecer em setembro.
-  const mesDaTela = () => registroDaTela ?? mesEm(pos);
+  //
+  // Um mês à frente nasce como plano: guarda só o que for lançado nele.
+  const mesDaTela = () => registroDaTela ?? { ...mesEm(pos), planejado: pos > 0 };
 
   // O mês seguinte do CALENDÁRIO, e o planejamento dele se houver. Pegar
   // `futuro[0]` fazia setembro fechar direto em novembro quando só novembro
@@ -297,30 +293,18 @@ function CadernoContas({ session, tema, onAlternarTema }) {
               : {}),
           };
 
-    // Lançar num mês à frente que ainda não existe faz ele nascer com a
-    // projeção daquele mês junto, não só com a conta nova. Um novembro que
-    // guardasse só o IPVA valeria menos que outubro na projeção e, adotado num
-    // fechamento, levaria as contas fixas embora — o bug do planejamento vazio
-    // de novo, por outra porta.
     const alvo = mesDaTela();
-    const semente =
-      !form.id && pos > 0 && !registroDaTela
-        ? projetarItens(itensEm(pos), avancoEm(pos))
-        : [];
-
     executar(() =>
-      form.id
-        ? repo.editarLancamento(form.id, item)
-        : repo.lancar(userId, alvo, item, semente)
+      form.id ? repo.editarLancamento(form.id, item) : repo.lancar(userId, alvo, item)
     );
     setForm(null);
   };
 
   const virarMes = async () => {
-    const avancado = fecharMes(dados);
-    const proximo = proximoPlanejado ?? { mesBase: avancado.mesBase, anoBase: avancado.anoBase };
+    // As contas avançadas vão sempre; quem decide se elas entram é o
+    // repositório, olhando no banco se o mês seguinte é novo, plano ou retrato.
     await executar(() =>
-      repo.fecharMesNoBanco(userId, dados, proximoPlanejado ? [] : avancado.itens, proximo)
+      repo.fecharMesNoBanco(userId, dados, fecharMes(dados).itens, proximoDoCalendario)
     );
     setOffset(0);
     setConfirmarFechar(false);
@@ -331,7 +315,8 @@ function CadernoContas({ session, tema, onAlternarTema }) {
   const abrirMes = async () => {
     const alvo = mesDaTela();
     if (!alvo || alvo.id === dados.id) return;
-    await executar(() => repo.abrirMesNoBanco(userId, alvo));
+    const completar = completarAoAbrir(alvo, { dados, futuro });
+    await executar(() => repo.abrirMesNoBanco(userId, alvo, completar));
     setOffset(0);
     setConfirmarAbrir(false);
   };
@@ -350,6 +335,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
       anoBase: m.anoBase,
       itens: m.itens.map(({ id, ...resto }) => resto),
       ...(m.fechadoEm ? { fechadoEm: m.fechadoEm } : {}),
+      ...(m.planejado ? { planejado: true } : {}),
     });
     const caderno = {
       versao: 2,
@@ -509,8 +495,9 @@ function CadernoContas({ session, tema, onAlternarTema }) {
                 {emHistorico ? "Mês fechado"
                   : emFuturo ? "Mês futuro planejado"
                   : emPassadoVazio ? "Mês passado, ainda sem lançamento"
-                  : "Mês futuro, ainda sem planejamento"} — o que você lançar
-                aqui fica só nesse mês, sem mexer no atual.
+                  : "Mês futuro, ainda sem planejamento"} — {pos > 0
+                  ? "o que você lançar aqui começa nesse mês, sem mexer no atual."
+                  : "o que você lançar aqui fica só nesse mês, sem mexer no atual."}
               </span>
               <button onClick={() => setOffset(0)}
                 className="text-[13px] font-semibold shrink-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destaque)]">
@@ -542,7 +529,7 @@ function CadernoContas({ session, tema, onAlternarTema }) {
         </div>
 
         {aba === "mes" && (
-          emHistorico || emFuturo ? (
+          emHistorico ? (
             <AbaMesHistorico
               entry={registroDaTela}
               onEditar={abrirEdicao}
@@ -552,7 +539,6 @@ function CadernoContas({ session, tema, onAlternarTema }) {
             <AbaMes
               nomeDoMes={m.nome}
               contexto={pos < 0 ? "passado" : pos > 0 ? "futuro" : "atual"}
-              offset={avancoEm(pos)}
               totalMes={totalEm(pos)}
               somaFixosMes={fixosEm(pos)}
               somaParcelasMes={parceladoEm(pos)}
@@ -608,7 +594,8 @@ function CadernoContas({ session, tema, onAlternarTema }) {
         <ModalFecharMes
           mesAtual={rotuloMes(mesBase, anoBase, 0).nome}
           proximoMes={proximoMesLabel}
-          adotaFuturo={proximoPlanejado !== null}
+          somaAoPlano={proximoPlanejado?.planejado === true}
+          adotaRetrato={proximoPlanejado !== null && !proximoPlanejado.planejado}
           onConfirmar={virarMes}
           onCancelar={() => setConfirmarFechar(false)}
         />

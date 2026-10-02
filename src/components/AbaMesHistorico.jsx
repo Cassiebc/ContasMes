@@ -26,9 +26,9 @@ export default function AbaMesHistorico({ entry, onEditar, onRemover }) {
         </div>
       ) : (
         <>
-          <Secao titulo="fixos" itens={fixos} offset={0} onEditar={onEditar} onRemover={onRemover} />
-          <Secao titulo="parcelado" itens={parcelados} offset={0} onEditar={onEditar} onRemover={onRemover} />
-          <Secao titulo="à vista" itens={aVista} offset={0} onEditar={onEditar} onRemover={onRemover} />
+          <Secao titulo="fixos" itens={fixos} onEditar={onEditar} onRemover={onRemover} />
+          <Secao titulo="parcelado" itens={parcelados} onEditar={onEditar} onRemover={onRemover} />
+          <Secao titulo="à vista" itens={aVista} onEditar={onEditar} onRemover={onRemover} />
         </>
       )}
     </>

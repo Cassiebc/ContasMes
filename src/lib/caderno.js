@@ -73,32 +73,62 @@ export const fecharMes = ({ itens, mesBase, anoBase }) => {
   };
 };
 
-// De onde a projeção de um mês parte: o último mês que EXISTE antes dele —
-// o planejado mais recente, ou o mês atual quando não há planejamento no meio.
-//
-// É o que faz planejar dezembro continuar propagando pra janeiro sem que
-// planejar dezembro apague novembro da conta. Antes a projeção partia sempre
-// do último planejado da lista, então um planejamento distante engolia todos
-// os meses entre ele e o atual.
-//
-// Não depende de `futuro` estar ordenado: percorre todos e fica com o mais
-// tardio que ainda vem antes do alvo.
-export const baseDaProjecao = (alvo, { dados, futuro }) =>
-  futuro
-    .filter((m) => distanciaMeses(m, alvo) > 0)
-    .reduce((mais, m) => (distanciaMeses(mais, m) > 0 ? m : mais), dados);
-
 // Os itens como ficam `n` meses à frente: as parcelas já na casa certa e as
 // que acabaram fora. É `fecharMes` aplicado n vezes, de uma vez só.
-//
-// Serve pra materializar um mês planejado. Quando se lança uma conta num mês
-// à frente que ainda não existia, ele nasce com a projeção dentro, não só com
-// a conta nova — um novembro guardando só o IPVA valeria menos que outubro na
-// projeção e, ao ser adotado num fechamento, levaria as contas fixas embora.
 export const projetarItens = (itens, n) =>
   itens
     .filter((it) => ativoEm(it, n))
     .map((it) => (it.tipo === "fixo" ? it : { ...it, paga: it.paga + n }));
+
+// O que cai num mês à frente do atual.
+//
+// Um mês à frente pode ser duas coisas, e a coluna `planejado` é quem diz:
+//
+// - PLANO (`planejado: true`): guarda só o que foi lançado nele — o IPVA de
+//   novembro. Não é o mês inteiro. O resto continua vindo do mês atual, então
+//   uma conta nova em setembro aparece em novembro mesmo com novembro já
+//   planejado. E o que nasce no plano segue adiante: uma fixa lançada em
+//   novembro está em dezembro também.
+// - RETRATO (`planejado: false`): o mês inteiro, gravado. É o mês atual, e é o
+//   que sobra à frente quando se volta com "abrir mês" — outubro já vivido
+//   não é recalculado só porque setembro voltou a ser o atual.
+//
+// A conta parte do último retrato que existe até o mês pedido e soma os planos
+// dali em diante, cada item já na parcela daquele mês. O que vem de outro mês
+// sai marcado `herdado`: a tela mostra, mas só deixa mexer no mês de origem.
+//
+// O plano já foi retrato também: lançar em outubro gravava ali uma cópia de
+// setembro inteiro. A cópia parava no tempo — o que entrasse em setembro
+// depois não chegava a outubro nem a mês nenhum adiante — e era ela que
+// dobrava quando duas escritas se cruzavam.
+export const itensNoMes = (alvo, { dados, futuro }) => {
+  const ate = [dados, ...futuro].filter((m) => distanciaMeses(m, alvo) >= 0);
+  const base = ate
+    .filter((m) => !m.planejado)
+    .reduce((mais, m) => (distanciaMeses(mais, m) > 0 ? m : mais), dados);
+  return ate
+    .filter((m) => m === base || (m.planejado && distanciaMeses(base, m) > 0))
+    .flatMap((m) => {
+      const n = distanciaMeses(m, alvo);
+      return projetarItens(m.itens, n).map((it) => (n > 0 ? { ...it, herdado: true } : it));
+    });
+};
+
+// O que "abrir mês" precisa gravar antes de marcar um mês à frente como atual.
+//
+// O mês atual é sempre retrato, e um plano só guarda o que foi lançado nele:
+// marcá-lo como atual do jeito que está abriria o mês só com o IPVA, sem as
+// contas fixas. Então cada mês que deixa de ser plano — o alvo e os planos que
+// ficam pra trás dele, que senão virariam histórico pela metade — recebe as
+// contas que herdava. Pra trás, ou pra um retrato, a lista sai vazia.
+export const completarAoAbrir = (alvo, { dados, futuro }) =>
+  [
+    ...futuro.filter((m) => m.planejado && distanciaMeses(m, alvo) > 0),
+    ...(alvo.planejado ? [alvo] : []),
+  ].map((mes) => ({
+    mes,
+    itens: itensNoMes(mes, { dados, futuro }).filter((it) => it.herdado),
+  }));
 
 export const mesmoMes = (a, b) => a.mesBase === b.mesBase && a.anoBase === b.anoBase;
 
