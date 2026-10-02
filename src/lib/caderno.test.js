@@ -3,7 +3,7 @@ import { faltam, ativoEm, rotuloMes, fecharMes, ehPlanejamentoVazio, ehAVista,
   deslocarMes,
   posDoMes,
   distanciaMeses,
-  baseDaProjecao,
+  itensNoMes,
   projetarItens,
 } from "./caderno";
 
@@ -286,37 +286,112 @@ describe("posDoMes para frente", () => {
   });
 });
 
-describe("baseDaProjecao", () => {
-  const mes = (mesBase, anoBase, itens = []) => ({ mesBase, anoBase, itens });
+describe("itensNoMes", () => {
+  const SET = { mesBase: 8, anoBase: 2026 };
+  const OUT = { mesBase: 9, anoBase: 2026 };
+  const NOV = { mesBase: 10, anoBase: 2026 };
+  const DEZ = { mesBase: 11, anoBase: 2026 };
 
-  it("sem planejamento, projeta a partir do mes atual", () => {
-    const est = { dados: mes(8, 2026), futuro: [] };
-    expect(baseDaProjecao({ mesBase: 10, anoBase: 2026 }, est)).toBe(est.dados);
+  const aluguel = { id: "a", tipo: "fixo", nome: "Aluguel", valor: 350 };
+  const notebook = { id: "n", tipo: "parcelado", nome: "Notebook", valor: 300, paga: 2, total: 10 };
+  const ipva = { id: "i", tipo: "parcelado", nome: "IPVA", valor: 800, paga: 1, total: 1 };
+  const academia = { id: "g", tipo: "fixo", nome: "Academia", valor: 90 };
+
+  const retrato = (mes, itens) => ({ ...mes, itens, planejado: false });
+  const plano = (mes, itens) => ({ ...mes, itens, planejado: true });
+  const nomes = (itens) => itens.map((i) => i.nome).sort();
+
+  it("sem nada planejado, e o mes atual com as parcelas avancadas", () => {
+    const est = { dados: retrato(SET, [aluguel, notebook]), futuro: [] };
+    const nov = itensNoMes(NOV, est);
+    expect(nomes(nov)).toEqual(["Aluguel", "Notebook"]);
+    expect(nov.find((i) => i.nome === "Notebook").paga).toBe(4);
   });
 
-  it("projeta a partir do planejado mais recente antes do alvo", () => {
-    const out = mes(9, 2026);
-    const est = { dados: mes(8, 2026), futuro: [out] };
-    // dezembro parte de outubro, que e o ultimo mes que existe antes dele
-    expect(baseDaProjecao({ mesBase: 11, anoBase: 2026 }, est)).toBe(out);
+  it("o plano soma ao que vem do mes atual, em vez de substituir", () => {
+    const est = { dados: retrato(SET, [aluguel, notebook]), futuro: [plano(OUT, [ipva])] };
+    expect(nomes(itensNoMes(OUT, est))).toEqual(["Aluguel", "IPVA", "Notebook"]);
   });
 
-  it("ignora planejamento que vem DEPOIS do alvo", () => {
-    // Esse e o caso que quebrava: planejar dezembro nao pode servir de base
-    // pra outubro, que vem antes dele.
-    const est = { dados: mes(8, 2026), futuro: [mes(11, 2026)] };
-    expect(baseDaProjecao({ mesBase: 9, anoBase: 2026 }, est)).toBe(est.dados);
+  // O bug relatado: outubro planejado guardava uma copia de setembro, e o que
+  // entrasse em setembro depois nao chegava a outubro nem a mes nenhum adiante.
+  it("conta lancada no mes atual DEPOIS do plano aparece no mes planejado", () => {
+    const antes = { dados: retrato(SET, [aluguel]), futuro: [plano(OUT, [ipva])] };
+    const depois = { ...antes, dados: retrato(SET, [aluguel, notebook]) };
+    expect(nomes(itensNoMes(OUT, antes))).toEqual(["Aluguel", "IPVA"]);
+    expect(nomes(itensNoMes(OUT, depois))).toEqual(["Aluguel", "IPVA", "Notebook"]);
+    expect(nomes(itensNoMes(DEZ, depois))).toEqual(["Aluguel", "Notebook"]);
+  });
+
+  it("o que e lancado num mes a frente nao aparece antes dele", () => {
+    const est = { dados: retrato(SET, [aluguel]), futuro: [plano(NOV, [academia])] };
+    expect(nomes(itensNoMes(OUT, est))).toEqual(["Aluguel"]);
+  });
+
+  it("fixa lancada num mes a frente segue pelos meses seguintes; a vista, nao", () => {
+    const est = { dados: retrato(SET, [aluguel]), futuro: [plano(OUT, [academia, ipva])] };
+    expect(nomes(itensNoMes(DEZ, est))).toEqual(["Academia", "Aluguel"]);
+  });
+
+  it("parcela lancada num mes a frente conta a partir dele", () => {
+    const tv = { id: "t", tipo: "parcelado", nome: "TV", valor: 200, paga: 1, total: 3 };
+    const est = { dados: retrato(SET, []), futuro: [plano(OUT, [tv])] };
+    expect(itensNoMes(OUT, est)[0].paga).toBe(1);
+    expect(itensNoMes(DEZ, est)[0].paga).toBe(3);
+    expect(itensNoMes({ mesBase: 0, anoBase: 2027 }, est)).toEqual([]);
+  });
+
+  it("marca como herdado so o que vem de outro mes", () => {
+    const est = { dados: retrato(SET, [aluguel]), futuro: [plano(OUT, [ipva])] };
+    const out = itensNoMes(OUT, est);
+    expect(out.find((i) => i.nome === "Aluguel").herdado).toBe(true);
+    expect(out.find((i) => i.nome === "IPVA").herdado).toBeUndefined();
+  });
+
+  it("no mes atual nada e herdado", () => {
+    const est = { dados: retrato(SET, [aluguel, notebook]), futuro: [] };
+    expect(itensNoMes(SET, est)).toEqual([aluguel, notebook]);
+  });
+
+  // Retrato a frente e o que sobra quando se volta com "abrir mes": outubro ja
+  // foi vivido, entao vale o que esta gravado nele.
+  it("um retrato a frente vale como esta, sem somar o mes atual", () => {
+    const est = {
+      dados: retrato(SET, [aluguel, notebook]),
+      futuro: [retrato(OUT, [academia])],
+    };
+    expect(itensNoMes(OUT, est)).toEqual([academia]);
+  });
+
+  it("depois de um retrato, a projecao parte dele e nao do mes atual", () => {
+    const est = {
+      dados: retrato(SET, [aluguel, notebook]),
+      futuro: [retrato(OUT, [academia]), plano(NOV, [ipva])],
+    };
+    expect(nomes(itensNoMes(NOV, est))).toEqual(["Academia", "IPVA"]);
+    expect(nomes(itensNoMes(DEZ, est))).toEqual(["Academia"]);
+  });
+
+  it("plano que ficou antes de um retrato nao entra de novo depois dele", () => {
+    const est = {
+      dados: retrato(SET, [aluguel]),
+      futuro: [plano(OUT, [academia]), retrato(NOV, [notebook])],
+    };
+    expect(nomes(itensNoMes(DEZ, est))).toEqual(["Notebook"]);
   });
 
   it("nao depende de futuro estar ordenado", () => {
-    const nov = mes(10, 2026);
-    const est = { dados: mes(8, 2026), futuro: [nov, mes(9, 2026)] };
-    expect(baseDaProjecao({ mesBase: 11, anoBase: 2026 }, est)).toBe(nov);
+    const est = {
+      dados: retrato(SET, [aluguel]),
+      futuro: [plano(NOV, [ipva]), plano(OUT, [academia])],
+    };
+    expect(nomes(itensNoMes(NOV, est))).toEqual(["Academia", "Aluguel", "IPVA"]);
   });
 
-  it("o proprio mes planejado nao e base dele mesmo", () => {
-    const est = { dados: mes(8, 2026), futuro: [mes(10, 2026)] };
-    expect(baseDaProjecao({ mesBase: 10, anoBase: 2026 }, est)).toBe(est.dados);
+  it("nao muta os itens de origem", () => {
+    const est = { dados: retrato(SET, [{ ...notebook }]), futuro: [] };
+    itensNoMes(DEZ, est);
+    expect(est.dados.itens[0]).toEqual(notebook);
   });
 });
 

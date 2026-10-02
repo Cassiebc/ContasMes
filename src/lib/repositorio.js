@@ -23,6 +23,7 @@ const paraMes = (m) => ({
   mesBase: m.mes,
   anoBase: m.ano,
   atual: m.atual,
+  planejado: m.planejado === true,
   fechadoEm: m.fechado_em,
   itens: (m.lancamentos ?? []).map(paraItem),
 });
@@ -33,7 +34,7 @@ const ordemCronologica = (a, b) => a.anoBase - b.anoBase || a.mesBase - b.mesBas
 export async function carregar(userId) {
   const { data, error } = await supabase
     .from("meses")
-    .select("id, ano, mes, atual, fechado_em, lancamentos(id, nome, valor, tipo, paga, total)")
+    .select("id, ano, mes, atual, planejado, fechado_em, lancamentos(id, nome, valor, tipo, paga, total)")
     .eq("user_id", userId)
     .order("ano")
     .order("mes");
@@ -71,25 +72,34 @@ export async function carregar(userId) {
 const buscarMes = async (userId, ano, mes) => {
   const { data, error } = await supabase
     .from("meses")
-    .select("id")
+    .select("id, planejado")
     .eq("user_id", userId)
     .eq("ano", ano)
     .eq("mes", mes)
     .maybeSingle();
   if (error) throw error;
-  return data?.id ?? null;
+  return data ?? null;
 };
 
 // Cria o mês, se ainda não existir, e devolve o id. Procura antes de inserir
 // pra não bater na constraint de mês único à toa — o banco recusaria, e o
 // 409 apareceria no console como se algo tivesse dado errado.
-async function garantirMes(userId, { mesBase, anoBase, atual = false }) {
+//
+// `criado` diz se foi ESTA chamada que fez o mês nascer, e quem responde é o
+// banco. Antes cada operação deduzia isso do que a tela sabia ("não tem id,
+// então é novo"), e a tela pode estar atrasada: um toque duplo, ou o app
+// aberto em outro aparelho, e as duas chamadas se achavam a criadora — cada
+// uma despejava as contas do mês inteiro, e ele nascia duplicado.
+//
+// `planejado` volta como está no banco, pelo mesmo motivo: é ele que decide se
+// um fechamento soma as contas ao mês ou o adota como está.
+async function garantirMes(userId, { mesBase, anoBase, atual = false, planejado = false }) {
   const existente = await buscarMes(userId, anoBase, mesBase);
-  if (existente) return existente;
+  if (existente) return { ...existente, criado: false };
 
   const { data, error } = await supabase
     .from("meses")
-    .insert({ user_id: userId, ano: anoBase, mes: mesBase, atual })
+    .insert({ user_id: userId, ano: anoBase, mes: mesBase, atual, planejado })
     .select("id")
     .single();
 
@@ -97,10 +107,10 @@ async function garantirMes(userId, { mesBase, anoBase, atual = false }) {
     // Se duas abas criaram o mesmo mês ao mesmo tempo, o banco deixou só uma
     // passar — a outra usa a que venceu em vez de falhar.
     const criadoPorOutro = await buscarMes(userId, anoBase, mesBase);
-    if (criadoPorOutro) return criadoPorOutro;
+    if (criadoPorOutro) return { ...criadoPorOutro, criado: false };
     throw error;
   }
-  return data.id;
+  return { id: data.id, planejado, criado: true };
 }
 
 const paraLinha = (mesId, item) => ({
@@ -112,17 +122,12 @@ const paraLinha = (mesId, item) => ({
   total: item.tipo === "parcelado" ? item.total : null,
 });
 
-// A `semente` só entra quando o mês está nascendo agora: é a projeção
-// daquele mês, materializada junto com o lançamento que o criou. Num mês que
-// já existe ela é ignorada — senão lançar duas contas seguidas em novembro
-// duplicaria as fixas ali.
-export async function lancar(userId, mes, item, semente = []) {
-  const existente = mes.id ?? (await buscarMes(userId, mes.anoBase, mes.mesBase));
-  const mesId = existente ?? (await garantirMes(userId, mes));
-  const linhas = existente ? [item] : [...semente, item];
-  const { error } = await supabase
-    .from("lancamentos")
-    .insert(linhas.map((it) => paraLinha(mesId, it)));
+// Lança no mês pedido, criando-o se ainda não existir. Um mês à frente nasce
+// como plano (`mes.planejado`) e guarda só este lançamento — o resto do mês
+// continua sendo calculado, veja `itensNoMes`.
+export async function lancar(userId, mes, item) {
+  const mesId = mes.id ?? (await garantirMes(userId, mes)).id;
+  const { error } = await supabase.from("lancamentos").insert(paraLinha(mesId, item));
   if (error) throw error;
 }
 
@@ -154,11 +159,44 @@ export async function apagarMes(mesId) {
 // Muda qual mês é o atual. É isto que "abrir mês" faz agora: nada é movido
 // de lista nenhuma, só troca a marca — o resto da linha do tempo se
 // reorganiza sozinho pela ordem das datas.
+//
 // Torna atual um mês que pode ainda não existir — é o caso de quem voltou
 // pra um mês que nunca registrou. Cria a linha antes de marcar.
-export async function abrirMesNoBanco(userId, mes) {
-  const mesId = mes.id ?? (await garantirMes(userId, mes));
+//
+// Abrir um mês À FRENTE pede um passo a mais. O mês atual é sempre retrato, e
+// um plano só guarda o que foi lançado nele: marcá-lo como atual do jeito que
+// está deixaria o mês só com o IPVA, sem as contas fixas. `completar` traz, pra
+// cada mês que vai deixar de ser plano, as contas que ele herdava — o alvo e
+// os planos que ficam pra trás dele, que senão virariam histórico pela metade.
+// Só completa o que ainda é plano no banco: se outro aparelho já fez isso, não
+// soma de novo.
+export async function abrirMesNoBanco(userId, mes, completar = []) {
+  for (const { mes: m, itens } of completar) {
+    const { id, criado, planejado } = await garantirMes(userId, {
+      mesBase: m.mesBase,
+      anoBase: m.anoBase,
+    });
+    if (criado || planejado) await virarRetrato(id, itens);
+  }
+  const mesId = mes.id ?? (await garantirMes(userId, mes)).id;
   await definirAtual(userId, mesId);
+}
+
+// Soma as contas herdadas a um mês e tira dele a marca de plano. Devolve os
+// ids do que entrou, pra quem chamou poder desfazer.
+async function virarRetrato(mesId, itens) {
+  let entraram = [];
+  if (itens.length > 0) {
+    const { data, error } = await supabase
+      .from("lancamentos")
+      .insert(itens.map((it) => paraLinha(mesId, it)))
+      .select("id");
+    if (error) throw error;
+    entraram = (data ?? []).map((l) => l.id);
+  }
+  const { error } = await supabase.from("meses").update({ planejado: false }).eq("id", mesId);
+  if (error) throw error;
+  return entraram;
 }
 
 export async function definirAtual(userId, mesId) {
@@ -174,27 +212,54 @@ export async function definirAtual(userId, mesId) {
 }
 
 // Fecha o mês atual: marca a data de fechamento e passa a marca de atual pro
-// mês seguinte, criando ele com os itens avançados se ainda não existir.
+// mês seguinte, que recebe as contas com as parcelas avançadas.
+//
+// O mês seguinte pode estar em três estados, e quem diz qual é o banco:
+// - não existe: é criado com as contas avançadas;
+// - é um plano: as contas avançadas se somam ao que já estava lançado nele;
+// - é um retrato (já foi vivido, e alguém voltou com "abrir mês"): é adotado
+//   como está, sem somar nada.
+//
+// O primeiro passo só vale se o mês ainda for o atual NO BANCO. Quem chega
+// depois — o segundo toque no botão, ou outro aparelho com a tela atrasada —
+// não fecha nada e sai sem escrever. Sem essa trava as duas chamadas seguiam
+// até o fim e o mês seguinte recebia as contas duas vezes.
 export async function fecharMesNoBanco(userId, mesAtual, itensDoProximo, proximo) {
-  const { error: erroFecha } = await supabase
+  const { data: fechados, error: erroFecha } = await supabase
     .from("meses")
     .update({ fechado_em: new Date().toISOString(), atual: false })
-    .eq("id", mesAtual.id);
+    .eq("id", mesAtual.id)
+    .eq("atual", true)
+    .select("id");
   if (erroFecha) throw erroFecha;
+  if (!fechados?.length) return null;
 
-  const jaExiste = proximo.id != null;
-  const proximoId = jaExiste ? proximo.id : await garantirMes(userId, proximo);
+  let entraram = [];
+  let eraPlano = null;
+  try {
+    const { id: proximoId, criado, planejado } = await garantirMes(userId, {
+      mesBase: proximo.mesBase,
+      anoBase: proximo.anoBase,
+    });
+    if (criado || planejado) {
+      if (planejado) eraPlano = proximoId;
+      entraram = await virarRetrato(proximoId, itensDoProximo);
+    }
 
-  if (!jaExiste && itensDoProximo.length > 0) {
-    const { error } = await supabase
-      .from("lancamentos")
-      .insert(itensDoProximo.map((it) => paraLinha(proximoId, it)));
+    const { error } = await supabase.from("meses").update({ atual: true }).eq("id", proximoId);
     if (error) throw error;
+    return proximoId;
+  } catch (e) {
+    // Falhou no meio: desfaz o que entrou e devolve a marca de atual, senão o
+    // caderno fica sem mês atual nenhum e nem abre mais.
+    if (entraram.length > 0) await supabase.from("lancamentos").delete().in("id", entraram);
+    if (eraPlano) await supabase.from("meses").update({ planejado: true }).eq("id", eraPlano);
+    await supabase
+      .from("meses")
+      .update({ atual: true, fechado_em: mesAtual.fechadoEm ?? null })
+      .eq("id", mesAtual.id);
+    throw e;
   }
-
-  const { error } = await supabase.from("meses").update({ atual: true }).eq("id", proximoId);
-  if (error) throw error;
-  return proximoId;
 }
 
 // Substitui o caderno inteiro (restaurar backup).
@@ -202,9 +267,11 @@ export async function substituirTudo(userId, { dados, historico = [], futuro = [
   const { error: erroApaga } = await supabase.from("meses").delete().eq("user_id", userId);
   if (erroApaga) throw erroApaga;
   await escreverMeses(userId, [
-    ...historico.map((m) => ({ ...m, atual: false })),
-    { ...dados, atual: true },
-    ...futuro.map((m) => ({ ...m, atual: false })),
+    ...historico.map((m) => ({ ...m, atual: false, planejado: false })),
+    { ...dados, atual: true, planejado: false },
+    // Só mês à frente pode ser plano. Backup antigo não traz a marca, e lá o
+    // mês à frente era o mês inteiro — retrato, que é o padrão.
+    ...futuro.map((m) => ({ ...m, atual: false, planejado: m.planejado === true })),
   ]);
 }
 
@@ -216,7 +283,7 @@ const DUPLICADO = "23505";
 async function escreverMeses(userId, meses) {
   for (const m of meses) {
     if (!Number.isInteger(m?.mesBase) || !Number.isInteger(m?.anoBase)) continue;
-    const mesId = await garantirMes(userId, m);
+    const { id: mesId } = await garantirMes(userId, m);
     if (m.atual) await supabase.from("meses").update({ atual: true }).eq("id", mesId);
     if (m.fechadoEm) await supabase.from("meses").update({ fechado_em: m.fechadoEm }).eq("id", mesId);
 
@@ -279,9 +346,9 @@ async function migrar(userId) {
   const historico = Array.isArray(antigo.historico) ? antigo.historico : [];
   const futuro = Array.isArray(antigo.futuro) ? antigo.futuro : [];
   const lista = [
-    ...historico.map((m) => ({ ...m, atual: false })),
-    { ...antigo.dados, atual: true },
-    ...futuro.map((m) => ({ ...m, atual: false })),
+    ...historico.map((m) => ({ ...m, atual: false, planejado: false })),
+    { ...antigo.dados, atual: true, planejado: false },
+    ...futuro.map((m) => ({ ...m, atual: false, planejado: false })),
   ];
 
   // O formato antigo permitia o mesmo mês em mais de uma lista. Aqui só cabe

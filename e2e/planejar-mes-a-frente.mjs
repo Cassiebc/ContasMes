@@ -97,11 +97,16 @@ check('setembro nao ganhou o IPVA', !setembro.itens.some((i) => i.nome === 'IPVA
 check('setembro continua sendo o mes atual', setembro.atual === true);
 check('novembro passou a existir', !!novembro);
 check('novembro tem o IPVA', novembro?.itens.some((i) => i.nome === 'IPVA'));
-check('novembro nasceu com a fixa junto', novembro?.itens.some((i) => i.nome === 'Aluguel'),
+// Novembro e um plano: guarda so o que foi lancado nele. A fixa e a parcela
+// continuam vindo de setembro, calculadas — ja foram copiadas pra dentro do
+// mes, e a copia parava de acompanhar setembro e duplicava.
+check('novembro guarda SO o IPVA, sem copia de setembro',
+  novembro?.itens.length === 1,
   `(novembro tem ${novembro?.itens.map((i) => i.nome)})`);
-check('e com a parcela ja avancada pra 4 de 10',
-  novembro?.itens.find((i) => i.nome === 'Notebook')?.paga === 4,
-  `(veio ${novembro?.itens.find((i) => i.nome === 'Notebook')?.paga})`);
+check('novembro esta marcado como plano', novembro?.planejado === true);
+tela = await corpo();
+check('a tela de novembro mostra a fixa e a parcela em 04/10 junto do IPVA',
+  tela.includes('Aluguel') && tela.includes('04/10') && tela.includes('IPVA'));
 check('outubro NAO foi criado a toa', !e.futuro.some((m) => m.mesBase === 9));
 
 // ===== 2. outubro continua alcancavel =====

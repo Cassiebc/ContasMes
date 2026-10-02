@@ -3,7 +3,6 @@ import CardTotal from "./CardTotal";
 import { ehAVista } from "../lib/caderno";
 
 export default function AbaMes({
-  offset,
   totalMes, somaFixosMes, somaParcelasMes, somaAVistaMes,
   itensDoMes, onEditar, onRemover,
   nomeDoMes, contexto = "atual",
@@ -46,15 +45,24 @@ export default function AbaMes({
         <>
           <Secao titulo="fixos"
             itens={itensDoMes.filter((i) => i.tipo === "fixo")}
-            onEditar={onEditar} onRemover={onRemover} offset={offset} />
+            onEditar={onEditar} onRemover={onRemover} />
 
           <Secao titulo="parcelado"
             itens={itensDoMes.filter((i) => i.tipo === "parcelado" && !ehAVista(i))}
-            onEditar={onEditar} onRemover={onRemover} offset={offset} />
+            onEditar={onEditar} onRemover={onRemover} />
 
           <Secao titulo="à vista"
             itens={itensDoMes.filter(ehAVista)}
-            onEditar={onEditar} onRemover={onRemover} offset={offset} />
+            onEditar={onEditar} onRemover={onRemover} />
+
+          {/* Num mês à frente, o que vem de outro mês aparece sem o × e sem
+              abrir pra edição: mexer ali mudaria o mês de origem sem avisar. */}
+          {itensDoMes.some((i) => i.herdado) && (
+            <p className="text-[13px] text-[var(--rotulo-2)] leading-snug px-4 -mt-2 mb-5">
+              As contas sem × vêm de um mês anterior. Para mudar ou tirar,
+              vá ao mês em que ela foi lançada.
+            </p>
+          )}
         </>
       )}
     </>
